@@ -232,7 +232,7 @@ def run_exact_reproduction(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, default="Qwen/Qwen2.5-3B-Instruct")
+    parser.add_argument("--model", type=str, default="Qwen/Qwen2.5-3B-Instruct", help="Base model backbone (paper Figure 7 uses Qwen3-4B)")
     parser.add_argument("--samples", type=int, default=400)
     args = parser.parse_args()
     run_exact_reproduction(args.model, args.samples)
