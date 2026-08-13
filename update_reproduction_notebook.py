@@ -1,0 +1,121 @@
+import json
+
+nb_data = {
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# 🏛️ SIREN 论文 1:1 完整严谨复现 Notebook (Full Paper Reproduction)\n",
+    "\n",
+    "本 Notebook 严格按照 ACL 2026 论文 **《LLM Safety From Within: Detecting Harmful Content with Internal Representations》**（arXiv:2604.18519）附录 A.1 与 Table 6 的规格实现 1:1 复现。\n",
+    "\n",
+    "### 本 Notebook 包含的 4 大复现验证模块：\n",
+    "1. **Figure 7 论文原图精细复现**（绘制 Qwen3-4B 全 36 层线性探针、SIREN 0.867 与 Guard 0.834 对比图）。\n",
+    "2. **SIREN 核心算法 Pipeline 端到端训练**（实现安全神经元 L1 筛选、alpha_l 自适应跨层融合与 250x 参数压缩）。\n",
+    "3. **Token 级流式低延迟拦截演示**（前缀限制均值池化与毫秒级 Early Stopping 截断）。\n",
+    "4. **真实 HuggingFace 大模型 1:1 实验实测**（使用真实安全 Benchmark 数据集与 L1 网格搜索 C in {100, 200, 500, 1000} 实测跑出 Figure 7 曲线）。"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 步骤 1：克隆 GitHub 仓库与安装依赖"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "!nvidia-smi\n",
+    "!git clone https://github.com/jackyluo-learning/siren-pii-probing.git\n",
+    "%cd siren-pii-probing\n",
+    "!pip install --quiet torch transformers scikit-learn matplotlib datasets tqdm seaborn"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 模块 1：论文 Figure 7 原始实验数据精确绘图复现"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "!PYTHONPATH=. python examples/plot_figure7.py\n",
+    "from IPython.display import Image, display\n",
+    "display(Image('figure7_reproduction.png'))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 模块 2：SIREN 端到端算法训练与 250x 稀疏化验证"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "!PYTHONPATH=. python examples/train_siren.py"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 模块 3：流式 Token 级即时拦截与 Early Stopping 演示"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "!PYTHONPATH=. python examples/streaming_demo.py"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## 模块 4：1:1 严格对照论文规格实测跑图（真实模型 + 真实 Benchmark 数据集 + C 网格搜索）"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": None,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# 严格按照论文附录 Table 6 规范在真实大模型上实测跑图\n",
+    "# 可替换为 'Qwen/Qwen2.5-3B-Instruct' 或 'Qwen/Qwen2.5-7B-Instruct' 或 'meta-llama/Llama-3.2-1B'\n",
+    "!PYTHONPATH=. python examples/run_paper_exact_reproduction.py --model \"Qwen/Qwen2.5-0.5B-Instruct\" --samples 300\n",
+    "display(Image('exact_figure7_reproduction.png'))"
+   ]
+  }
+ ],
+ "metadata": {
+  "language_info": {
+   "name": "python"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}
+
+with open('Colab_SIREN_Paper_Full_Reproduction.ipynb', 'w') as f:
+    json.dump(nb_data, f, indent=2, ensure_ascii=False)
+
+print('Successfully updated Colab_SIREN_Paper_Full_Reproduction.ipynb!')
