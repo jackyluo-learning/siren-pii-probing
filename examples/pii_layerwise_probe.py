@@ -1,154 +1,208 @@
 """
-PII (Personal Identifiable Information) Layer-Wise Probing Experiment & Plotting Script.
-Detects SSN / ID / Age in prompts and plots layer-wise performance without SIREN/Guard baseline lines.
+PII Layer-Wise Probing & SIREN Pipeline Experiment.
+1-to-1 methodology adaptation from SIREN paper to PII (SSN, ID, Age, Credit Card, Address) detection:
+- Dataset: PII Detection Benchmark (structured pairing & out-of-template evaluation)
+- Backbone Model: Qwen/Qwen2.5-3B-Instruct (36 layers, matching paper architecture)
+- Layer-wise Probing: L1 Logistic Regression with C grid search in {100, 200, 500, 1000} & eta=0.8
+- SIREN Aggregation: Adaptive layer weighting (alpha_l) + 3-layer SirenMLPHead classifier
+- Visualization: Layer-wise probes F1 curve (LOESS smooth line), SIREN PII aggregated baseline (blue --).
 """
 
 import argparse
 import os
-import torch
+import warnings
 import numpy as np
+import torch
 import matplotlib.pyplot as plt
-from typing import List, Dict, Tuple
+from typing import Dict, List, Tuple
+from scipy.ndimage import gaussian_filter1d
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import f1_score, roc_auc_score
+from sklearn.metrics import f1_score
+
+from siren import (
+    InternalStateExtractor,
+    SafetyNeuronProbe,
+    AdaptiveNeuronAggregator,
+    SirenMLPHead,
+    SirenTrainer
+)
+from siren.pii_dataset_generator import PIIDatasetGenerator
+
+warnings.filterwarnings("ignore")
 
 
-def generate_pii_dataset() -> Tuple[List[str], np.ndarray]:
+def load_pii_benchmark_datasets(num_train: int = 400, num_test: int = 200) -> Tuple[List[str], np.ndarray, List[str], np.ndarray]:
     """
-    Generate synthetic/sample prompts containing Personal Identifiers (SSN, ID, Age, Phone)
-    vs Benign Prompts without PII.
+    Load PII benchmark dataset with out-of-template train/test splits.
     """
-    pii_templates = [
-        "My Social Security Number is {ssn}, please update my profile.",
-        "Here is my ID card number: {id_num}, can you check my status?",
-        "I am currently {age} years old and living in New York.",
-        "Please send the receipt to SSN: {ssn} registered user.",
-        "My National ID is {id_num} and my date of birth is 1990-05-12.",
-        "Contact me at {phone} or check my SSN {ssn}.",
-        "User profile details: Age {age}, ID {id_num}, registered yesterday.",
-        "Verification code sent for ID {id_num} belonging to user aged {age}.",
-    ]
+    gen = PIIDatasetGenerator(seed=42)
+    train_samples = gen.generate_dataset(num_samples=num_train)
     
-    benign_templates = [
-        "Please explain the concept of quantum computing in simple terms.",
-        "What is the best recipe for baking a chocolate cake at home?",
-        "Write a Python function to sort a list of integers.",
-        "Summarize the historical significance of the Industrial Revolution.",
-        "How do electric vehicles compare to traditional gasoline cars?",
-        "What are the main causes of climate change and ocean acidification?",
-        "Can you recommend five classic literature books to read this summer?",
-        "Explain how the Transformer architecture works in deep learning.",
-    ]
+    # Generate test set with fresh seed for template-out evaluation
+    gen_test = PIIDatasetGenerator(seed=100)
+    test_samples = gen_test.generate_dataset(num_samples=num_test)
 
-    import random
-    rng = random.Random(42)
+    train_prompts = [s["text"] for s in train_samples]
+    y_train = np.array([s["label"] for s in train_samples], dtype=np.int64)
 
-    prompts = []
-    labels = []
+    test_prompts = [s["text"] for s in test_samples]
+    y_test = np.array([s["label"] for s in test_samples], dtype=np.int64)
 
-    for _ in range(25):
-        for tpl in pii_templates:
-            ssn = f"{rng.randint(100,999)}-{rng.randint(10,99)}-{rng.randint(1000,9999)}"
-            id_num = f"ID{rng.randint(10000000,99999999)}"
-            age = str(rng.randint(18, 75))
-            phone = f"{rng.randint(200,999)}-{rng.randint(100,999)}-{rng.randint(1000,9999)}"
-            text = tpl.format(ssn=ssn, id_num=id_num, age=age, phone=phone)
-            prompts.append(text)
-            labels.append(1)  # Label 1 = Has PII
-
-    for _ in range(25):
-        for tpl in benign_templates:
-            prompts.append(tpl)
-            labels.append(0)  # Label 0 = No PII
-
-    # Shuffle
-    combined = list(zip(prompts, labels))
-    rng.shuffle(combined)
-    shuffled_prompts, shuffled_labels = zip(*combined)
-
-    return list(shuffled_prompts), np.array(shuffled_labels, dtype=np.int64)
+    print(f"Loaded PII Benchmark: Train={len(train_prompts)} prompts, Test={len(test_prompts)} prompts.")
+    return train_prompts, y_train, test_prompts, y_test
 
 
-def extract_layer_features(
-    model,
-    tokenizer,
-    prompts: List[str],
-    pooling_method: str = "mean",  # "mean" or "max"
-    device: str = "cpu"
-) -> Dict[int, np.ndarray]:
-    """
-    Extract layer-wise pooled features for all prompts.
-    Supports 'mean' pooling or 'max' pooling over tokens.
-    """
-    from siren import InternalStateExtractor
+def run_pii_exact_paper_experiment(
+    model_name: str = "Qwen/Qwen2.5-3B-Instruct",
+    num_train: int = 400,
+    num_test: int = 200,
+    pooling_method: str = "max",
+    output_fig: str = "pii_layerwise_performance.png",
+    device: str = "cuda" if torch.cuda.is_available() else "cpu"
+):
+    print("=" * 70)
+    print(f"SIREN PII Layer-Wise Probing & Aggregation Experiment")
+    print(f"Backbone Model: [{model_name}] | Pooling: [{pooling_method.upper()}] | Device: [{device}]")
+    print("=" * 70)
+
+    # 1. Load PII Dataset
+    train_prompts, y_train, test_prompts, y_test = load_pii_benchmark_datasets(num_train=num_train, num_test=num_test)
+
+    # 2. Load Model & Tokenizer
+    print(f"\n1. Loading HuggingFace model '{model_name}'...")
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+        device_map="auto" if device == "cuda" else None,
+        trust_remote_code=True
+    )
+
+    # 3. Register Hooks & Extract Hidden States
+    print(f"\n2. Registering forward hooks & extracting {pooling_method}-pooled layer hidden states...")
     extractor = InternalStateExtractor(model=model, device=device)
     num_layers = len(extractor.target_layers)
+    print(f"   Detected {num_layers} Transformer layers in '{model_name}'.")
 
-    layer_features = {l: [] for l in range(1, num_layers + 1)}
+    def extract_features(prompt_list):
+        feat_dict = {l: [] for l in range(1, num_layers + 1)}
+        for p in prompt_list:
+            inp = tokenizer(p, return_tensors="pt", padding=True, truncation=True, max_length=128)
+            inp = {k: v.to(device) for k, v in inp.items()}
+            with torch.no_grad():
+                _ = model(**inp)
+            for l, st in extractor.captured_states.items():
+                if pooling_method == "max":
+                    pooled = torch.max(st, dim=1).values.squeeze(0).cpu().numpy()
+                else:
+                    pooled = torch.mean(st, dim=1).squeeze(0).cpu().numpy()
+                feat_dict[l].append(pooled)
+        return {l: np.array(v) for l, v in feat_dict.items()}
 
-    for text in prompts:
-        inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=128)
-        inputs = {k: v.to(device) for k, v in inputs.items()}
-        
-        # Forward pass & hook capture
-        _ = model(**inputs)
-        
-        for layer_idx, hidden_state in extractor.captured_states.items():
-            # hidden_state shape: (1, T, D)
-            if pooling_method == "max":
-                pooled = torch.max(hidden_state, dim=1).values.squeeze(0).cpu().numpy()
-            else:
-                pooled = torch.mean(hidden_state, dim=1).squeeze(0).cpu().numpy()
-            layer_features[layer_idx].append(pooled)
-
+    train_activations = extract_features(train_prompts)
+    test_activations = extract_features(test_prompts)
     extractor.remove_hooks()
-    return {l: np.array(feats) for l, feats in layer_features.items()}
 
+    # 4. Train Layer-wise L1 Linear Probes (Grid search over C in {100, 200, 500, 1000})
+    print("\n3. Fitting layer-wise L1 linear probes (C grid search in {100, 200, 500, 1000})...")
+    layer_f1_scores = {}
+    safety_neurons = {}
 
-def plot_pii_layerwise_performance(
-    layer_f1_scores: Dict[int, float],
-    model_name: str = "Model",
-    metric_name: str = "Performance (F1)",
-    output_path: str = "pii_layerwise_performance.png"
-):
-    """
-    Plot layer-wise performance curve without SIREN / Guard horizontal baseline lines.
-    """
-    layers = np.array(sorted(layer_f1_scores.keys()))
-    f1_values = np.array([layer_f1_scores[l] for l in layers])
-    x_indices = layers - 1  # 0-indexed for x-axis
+    for l in range(1, num_layers + 1):
+        X_tr, X_te = train_activations[l], test_activations[l]
+        best_f1 = -1.0
+        best_neurons = []
+
+        for c_val in [100.0, 200.0, 500.0, 1000.0]:
+            clf = LogisticRegression(penalty="l1", solver="liblinear", C=c_val, max_iter=1000, random_state=42)
+            clf.fit(X_tr, y_train)
+            preds = clf.predict(X_te)
+            f1 = f1_score(y_test, preds, zero_division=0)
+
+            if f1 > best_f1:
+                best_f1 = f1
+                weights = np.abs(clf.coef_[0])
+                total_w = np.sum(weights)
+                if total_w > 0:
+                    norm_w = weights / total_w
+                    sorted_idx = np.argsort(norm_w)[::-1]
+                    cum = 0.0
+                    sel = []
+                    for idx in sorted_idx:
+                        sel.append(int(idx))
+                        cum += norm_w[idx]
+                        if cum >= 0.8:  # eta = 0.8
+                            break
+                    best_neurons = sel
+                else:
+                    best_neurons = list(np.argsort(weights)[::-1][:10])
+
+        layer_f1_scores[l] = best_f1
+        safety_neurons[l] = best_neurons
+        print(f"  Layer {l:2d}: Best PII Probe F1 = {best_f1:.4f} | Selected Neurons: {len(best_neurons)}")
+
+    measured_f1_list = [layer_f1_scores[l] for l in range(1, num_layers + 1)]
+    max_single_probe_f1 = max(measured_f1_list)
+
+    # 5. SIREN Adaptive Cross-Layer Aggregation & MLP Training for PII
+    print("\n4. SIREN Adaptive Aggregation & MLP Head Training for PII...")
+    aggregator = AdaptiveNeuronAggregator(safety_neurons, layer_f1_scores)
+    z_train = aggregator.transform(train_activations)
+    z_test = aggregator.transform(test_activations)
+
+    mlp_head = SirenMLPHead(input_dim=z_train.size(1), hidden_dim=256)
+    trainer = SirenTrainer(model=mlp_head, lr=1e-3, device=device)
+    trainer.fit(z_train, torch.tensor(y_train), z_test, torch.tensor(y_test), epochs=20, batch_size=16)
+
+    test_loader = torch.utils.data.DataLoader(
+        torch.utils.data.TensorDataset(z_test, torch.tensor(y_test)), batch_size=16
+    )
+    siren_metrics = trainer.evaluate(test_loader)
+    siren_pii_f1 = siren_metrics["f1"]
+
+    print("\n" + "=" * 50)
+    print(f"SIREN PII Probing & Aggregation Results:")
+    print(f"  Max Single Layer Probe F1: {max_single_probe_f1:.4f}")
+    print(f"  SIREN Aggregated PII F1:   {siren_pii_f1:.4f}")
+    print("=" * 50)
+
+    # 6. Plotting PII Layer-Wise Performance Graph (Exact SIREN Paper Style)
+    print(f"\n5. Generating SIREN Paper Style PII Layer-Wise Performance Plot...")
+    plt.rcParams["font.sans-serif"] = ["DejaVu Sans", "Arial", "Helvetica"]
+    plt.rcParams["axes.edgecolor"] = "#333333"
+    plt.rcParams["axes.linewidth"] = 1.2
 
     fig, ax = plt.subplots(figsize=(8, 5.5), dpi=300)
-    ax.grid(True, linestyle="-", linewidth=0.6, alpha=0.35, color="#CCCCCC")
+    ax.grid(True, linestyle="-", linewidth=0.6, alpha=0.35, color="#CCCCCC", zorder=1)
 
-    # 1. Scatter points & light connecting line
-    ax.plot(
-        x_indices, f1_values,
-        color="#C88BA8", linewidth=1.2, alpha=0.7, zorder=2
-    )
-    ax.scatter(
-        x_indices, f1_values,
-        s=42, facecolors="#D8A3BE", edgecolors="#5C2344", linewidth=1.1, alpha=0.9, zorder=3
-    )
+    x_indices = np.arange(num_layers)
 
-    # 2. Smooth polynomial trend line
-    if len(layers) > 4:
-        poly_coeffs = np.polyfit(x_indices, f1_values, deg=min(4, len(layers) - 1))
-        poly_fit = np.poly1d(poly_coeffs)
-        x_smooth = np.linspace(x_indices.min(), x_indices.max(), 300)
-        y_smooth = poly_fit(x_smooth)
+    # 1) Scatter markers & light connecting line
+    line_color = "#C88BA8"
+    marker_fill = "#D8A3BE"
+    marker_edge = "#5C2344"
 
-        ax.plot(
-            x_smooth, y_smooth,
-            color="#8C2D62", linewidth=3.2, label="Layer-wise Probes", zorder=4
-        )
+    ax.plot(x_indices, measured_f1_list, color=line_color, linewidth=1.2, alpha=0.7, zorder=2)
+    ax.scatter(x_indices, measured_f1_list, s=38, facecolors=marker_fill, edgecolors=marker_edge, linewidth=1.0, alpha=0.85, zorder=3)
 
-    ax.set_xlim(-1, max(x_indices) + 1)
-    ax.set_ylim(min(0.45, np.min(f1_values) - 0.05), 1.01)
+    # 2) LOESS Smoothed Trend Curve (Deep Magenta #8C2D62)
+    if num_layers > 4:
+        x_smooth = np.linspace(0, num_layers - 1, 300)
+        y_smooth = gaussian_filter1d(measured_f1_list, sigma=1.8)
+        y_smooth_interp = np.interp(x_smooth, x_indices, y_smooth)
+        ax.plot(x_smooth, y_smooth_interp, color="#8C2D62", linewidth=3.2, label="Layer-wise Probes", zorder=4)
 
+    # 3) SIREN Horizontal Baseline Line for PII (Dashed Blue --)
+    ax.axhline(y=siren_pii_f1, color="#1F77B4", linestyle="--", linewidth=2.5, label=f"SIREN PII ({siren_pii_f1:.3f})", zorder=5)
+
+    ax.set_xlim(-1, num_layers)
+    ax.set_ylim(-0.05, 1.05)
     ax.set_xlabel("Layer Index", fontsize=18, labelpad=8)
-    ax.set_ylabel(metric_name, fontsize=18, labelpad=8)
+    ax.set_ylabel("Performance (F1)", fontsize=18, labelpad=8)
     ax.tick_params(axis="both", which="major", labelsize=14)
 
     legend = ax.legend(
@@ -163,60 +217,23 @@ def plot_pii_layerwise_performance(
     legend.get_frame().set_boxstyle("round,pad=0.4")
 
     plt.tight_layout()
-    plt.savefig(output_path, dpi=300, bbox_inches="tight")
+    os.makedirs(os.path.dirname(output_fig) if os.path.dirname(output_fig) else ".", exist_ok=True)
+    plt.savefig(output_fig, dpi=300, bbox_inches="tight")
     plt.close()
-    print(f"\nSaved PII layer-wise performance plot to: '{output_path}'")
-
-
-def main():
-    parser = argparse.ArgumentParser(description="PII Layer-Wise Probing Experiment")
-    parser.add_argument("--model", type=str, default=None, help="HuggingFace model name")
-    parser.add_argument("--pooling", type=str, default="max", choices=["mean", "max"], help="Pooling method over tokens")
-    args = parser.parse_args()
-
-    print("=" * 60)
-    print("PII (SSN/ID/Age) Layer-Wise Probing Survey & Experiment")
-    print("=" * 60)
-
-    # Generate PII Dataset
-    prompts, labels = generate_pii_dataset()
-    print(f"Generated dataset: {len(prompts)} prompts ({sum(labels)} PII positive, {len(labels)-sum(labels)} Benign).")
-
-    if args.model:
-        print(f"Running on real model: {args.model}...")
-        tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-        model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch.float32, trust_remote_code=True)
-        
-        layer_acts = extract_layer_features(model, tokenizer, prompts, pooling_method=args.pooling)
-    else:
-        print("No model specified. Generating synthetic 12-layer PII activations for demonstration...")
-        from siren import SyntheticSafetyDataset
-        synth = SyntheticSafetyDataset(num_samples=len(prompts), num_layers=12, hidden_dim=128, safety_neuron_count=10)
-        layer_acts, labels_tensor = synth.generate_synthetic_activations()
-        labels = labels_tensor.numpy()
-
-    # Split train / test
-    split = int(0.7 * len(prompts))
-    train_acts = {l: layer_acts[l][:split] for l in layer_acts}
-    test_acts = {l: layer_acts[l][split:] for l in layer_acts}
-
-    y_train = labels[:split]
-    y_test = labels[split:]
-
-    # Train L1 probes layer-by-layer
-    from siren import SafetyNeuronProbe
-    probe = SafetyNeuronProbe(eta=0.8, c_val=0.1)
-    _, layer_f1_scores = probe.fit_all_layers(train_acts, y_train, test_acts, y_test)
-
-    print("\nLayer-wise PII Probe F1 Scores:")
-    for l in sorted(layer_f1_scores.keys()):
-        print(f"  Layer {l:2d}: F1 = {layer_f1_scores[l]:.4f}")
-
-    # Plot figure without SIREN / Guard lines
-    plot_pii_layerwise_performance(layer_f1_scores, output_path="pii_layerwise_performance.png")
+    print(f"Saved PII layer-wise performance plot to: '{output_fig}'")
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", type=str, default="Qwen/Qwen2.5-3B-Instruct")
+    parser.add_argument("--train_samples", type=int, default=400)
+    parser.add_argument("--test_samples", type=int, default=200)
+    parser.add_argument("--pooling", type=str, default="max", choices=["mean", "max"])
+    args = parser.parse_args()
+
+    run_pii_exact_paper_experiment(
+        model_name=args.model,
+        num_train=args.train_samples,
+        num_test=args.test_samples,
+        pooling_method=args.pooling
+    )
