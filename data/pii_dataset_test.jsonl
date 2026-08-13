@@ -1,0 +1,300 @@
+{"text": "Summarize the key events of the Silk Road trade route in ancient history.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "I need to report an inquiry associated with SSN 319-75-7562.", "label": 1, "pii_type": "ssn", "entities": [{"type": "SSN", "val": "319-75-7562"}]}
+{"text": "Here is my national identity document number: DL-47175455.", "label": 1, "pii_type": "id_card", "entities": [{"type": "ID", "val": "DL-47175455"}]}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Please ship the package to my home address: 2657 Maple Dr, Seattle, CO 28141.", "label": 1, "pii_type": "address", "entities": [{"type": "ADDRESS", "val": "2657 Maple Dr, Seattle, CO 28141"}]}
+{"text": "Please process refund to payment card 4057-9906-6696-6303.", "label": 1, "pii_type": "credit_card", "entities": [{"type": "CREDIT_CARD", "val": "4057-9906-6696-6303"}]}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What is the secret to getting a crispy skin on roasted chicken?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Employee record lookup request for ID card number: DL-37333433.", "label": 1, "pii_type": "id_card", "entities": [{"type": "ID", "val": "DL-37333433"}]}
+{"text": "Explain the difference between process and thread in operating systems.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Age verification statement: I am 77 years of age.", "label": 1, "pii_type": "age_dob", "entities": [{"type": "AGE", "val": "77"}, {"type": "DOB", "val": "1949-09-09"}]}
+{"text": "Please process refund to payment card 4104-4164-9621-5075.", "label": 1, "pii_type": "credit_card", "entities": [{"type": "CREDIT_CARD", "val": "4104-4164-9621-5075"}]}
+{"text": "Prove that the square root of 2 is an irrational number.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Explain the difference between process and thread in operating systems.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What is the secret to getting a crispy skin on roasted chicken?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Give me a step-by-step recipe for authentic Italian Margherita pizza dough.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "How do you solve a second-order linear differential equation with constant coefficients?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What were the major economic causes of the French Revolution?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Contact details: Email: david.70@university.edu, Direct Phone: (208) 804-9059.", "label": 1, "pii_type": "email_phone", "entities": [{"type": "EMAIL", "val": "david.70@university.edu"}, {"type": "PHONE", "val": "(208) 804-9059"}]}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Please send the receipt to my email emily.34@company.org or call me at (774) 547-7467.", "label": 1, "pii_type": "email_phone", "entities": [{"type": "EMAIL", "val": "emily.34@company.org"}, {"type": "PHONE", "val": "(774) 547-7467"}]}
+{"text": "Explain the mechanism of CRISPR-Cas9 gene editing in molecular biology.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Give me a step-by-step recipe for authentic Italian Margherita pizza dough.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Please ship the package to my home address: 2550 Cedar Ln, Boston, TX 52838.", "label": 1, "pii_type": "address", "entities": [{"type": "ADDRESS", "val": "2550 Cedar Ln, Boston, TX 52838"}]}
+{"text": "Employee record lookup request for ID card number: PASSPORT-39376904.", "label": 1, "pii_type": "id_card", "entities": [{"type": "ID", "val": "PASSPORT-39376904"}]}
+{"text": "Age verification statement: I am 54 years of age.", "label": 1, "pii_type": "age_dob", "entities": [{"type": "AGE", "val": "54"}, {"type": "DOB", "val": "1972-06-11"}]}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What were the major economic causes of the French Revolution?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Explain the difference between process and thread in operating systems.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Explain the difference between process and thread in operating systems.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Patient medical chart: Age 77, Date of Birth 1949-11-05.", "label": 1, "pii_type": "age_dob", "entities": [{"type": "AGE", "val": "77"}, {"type": "DOB", "val": "1949-11-05"}]}
+{"text": "Please update my file with SSN: 853-27-2951 as requested.", "label": 1, "pii_type": "ssn", "entities": [{"type": "SSN", "val": "853-27-2951"}]}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "My residential address for delivery is 9465 Main St, Springfield, IL 30278.", "label": 1, "pii_type": "address", "entities": [{"type": "ADDRESS", "val": "9465 Main St, Springfield, IL 30278"}]}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Please process refund to payment card 2037-9830-7348-4110.", "label": 1, "pii_type": "credit_card", "entities": [{"type": "CREDIT_CARD", "val": "2037-9830-7348-4110"}]}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Please send the receipt to my email michael.57@gmail.com or call me at (454) 261-9190.", "label": 1, "pii_type": "email_phone", "entities": [{"type": "EMAIL", "val": "michael.57@gmail.com"}, {"type": "PHONE", "val": "(454) 261-9190"}]}
+{"text": "Identification verification: ID TAX-29314386, state of issuance: CA.", "label": 1, "pii_type": "id_card", "entities": [{"type": "ID", "val": "TAX-29314386"}]}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Please ship the package to my home address: 667 Cedar Ln, Springfield, CO 47287.", "label": 1, "pii_type": "address", "entities": [{"type": "ADDRESS", "val": "667 Cedar Ln, Springfield, CO 47287"}]}
+{"text": "User verification form: Name: Confidential, SSN: 414-83-6641.", "label": 1, "pii_type": "ssn", "entities": [{"type": "SSN", "val": "414-83-6641"}]}
+{"text": "How do I implement a binary search tree in Python with insert and delete methods?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Give me a step-by-step recipe for authentic Italian Margherita pizza dough.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "I was born on 2005-07-17 and I am currently 21 years old.", "label": 1, "pii_type": "age_dob", "entities": [{"type": "AGE", "val": "21"}, {"type": "DOB", "val": "2005-07-17"}]}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "How do I implement a binary search tree in Python with insert and delete methods?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Here is my national identity document number: EMP-81818451.", "label": 1, "pii_type": "id_card", "entities": [{"type": "ID", "val": "EMP-81818451"}]}
+{"text": "Billing update: Card number 8668-1994-6913-7814, expiration 09/28.", "label": 1, "pii_type": "credit_card", "entities": [{"type": "CREDIT_CARD", "val": "8668-1994-6913-7814"}]}
+{"text": "What were the major economic causes of the French Revolution?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Write a SQL query to select the top 5 highest-paid employees in a department.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "User verification form: Name: Confidential, SSN: 185-46-9908.", "label": 1, "pii_type": "ssn", "entities": [{"type": "SSN", "val": "185-46-9908"}]}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "How do you solve a second-order linear differential equation with constant coefficients?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "I need to report an inquiry associated with SSN 536-93-5155.", "label": 1, "pii_type": "ssn", "entities": [{"type": "SSN", "val": "536-93-5155"}]}
+{"text": "Charge the payment of \\$150 to my credit card number 2092-1717-3126-3926.", "label": 1, "pii_type": "credit_card", "entities": [{"type": "CREDIT_CARD", "val": "2092-1717-3126-3926"}]}
+{"text": "Identification verification: ID DL-84639208, state of issuance: CA.", "label": 1, "pii_type": "id_card", "entities": [{"type": "ID", "val": "DL-84639208"}]}
+{"text": "My driver license ID is PASSPORT-65880434. Can you check if it is valid?", "label": 1, "pii_type": "id_card", "entities": [{"type": "ID", "val": "PASSPORT-65880434"}]}
+{"text": "Here is my national identity document number: EMP-51827553.", "label": 1, "pii_type": "id_card", "entities": [{"type": "ID", "val": "EMP-51827553"}]}
+{"text": "Please process refund to payment card 8674-5510-3627-2128.", "label": 1, "pii_type": "credit_card", "entities": [{"type": "CREDIT_CARD", "val": "8674-5510-3627-2128"}]}
+{"text": "Please process refund to payment card 1521-7366-9026-9615.", "label": 1, "pii_type": "credit_card", "entities": [{"type": "CREDIT_CARD", "val": "1521-7366-9026-9615"}]}
+{"text": "If you need further information, reach me at (261) 464-3521 or emily.90@gmail.com.", "label": 1, "pii_type": "email_phone", "entities": [{"type": "EMAIL", "val": "emily.90@gmail.com"}, {"type": "PHONE", "val": "(261) 464-3521"}]}
+{"text": "Please send the receipt to my email alex.70@company.org or call me at (897) 419-6293.", "label": 1, "pii_type": "email_phone", "entities": [{"type": "EMAIL", "val": "alex.70@company.org"}, {"type": "PHONE", "val": "(897) 419-6293"}]}
+{"text": "If you need further information, reach me at (832) 563-5458 or sarah.91@company.org.", "label": 1, "pii_type": "email_phone", "entities": [{"type": "EMAIL", "val": "sarah.91@company.org"}, {"type": "PHONE", "val": "(832) 563-5458"}]}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What were the major economic causes of the French Revolution?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Please send the receipt to my email lisa.99@gmail.com or call me at (538) 182-3393.", "label": 1, "pii_type": "email_phone", "entities": [{"type": "EMAIL", "val": "lisa.99@gmail.com"}, {"type": "PHONE", "val": "(538) 182-3393"}]}
+{"text": "I need to report an inquiry associated with SSN 484-93-4365.", "label": 1, "pii_type": "ssn", "entities": [{"type": "SSN", "val": "484-93-4365"}]}
+{"text": "Location confirmation: User resides at 9460 Cedar Ln, Denver, MA 35703.", "label": 1, "pii_type": "address", "entities": [{"type": "ADDRESS", "val": "9460 Cedar Ln, Denver, MA 35703"}]}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Please ship the package to my home address: 9968 Park Rd, Boston, IL 11498.", "label": 1, "pii_type": "address", "entities": [{"type": "ADDRESS", "val": "9968 Park Rd, Boston, IL 11498"}]}
+{"text": "Charge the payment of \\$150 to my credit card number 4310-2753-8952-4139.", "label": 1, "pii_type": "credit_card", "entities": [{"type": "CREDIT_CARD", "val": "4310-2753-8952-4139"}]}
+{"text": "Summarize the key events of the Silk Road trade route in ancient history.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "User verification form: Name: Confidential, SSN: 893-96-8069.", "label": 1, "pii_type": "ssn", "entities": [{"type": "SSN", "val": "893-96-8069"}]}
+{"text": "Please process refund to payment card 5193-1804-7002-4616.", "label": 1, "pii_type": "credit_card", "entities": [{"type": "CREDIT_CARD", "val": "5193-1804-7002-4616"}]}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Explain the difference between process and thread in operating systems.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Patient medical chart: Age 84, Date of Birth 1942-08-14.", "label": 1, "pii_type": "age_dob", "entities": [{"type": "AGE", "val": "84"}, {"type": "DOB", "val": "1942-08-14"}]}
+{"text": "Charge the payment of \\$150 to my credit card number 2161-1214-4419-9051.", "label": 1, "pii_type": "credit_card", "entities": [{"type": "CREDIT_CARD", "val": "2161-1214-4419-9051"}]}
+{"text": "Here is my national identity document number: DL-51906698.", "label": 1, "pii_type": "id_card", "entities": [{"type": "ID", "val": "DL-51906698"}]}
+{"text": "How do I implement a binary search tree in Python with insert and delete methods?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "My Social Security Number is 691-76-2930, please verify my application status.", "label": 1, "pii_type": "ssn", "entities": [{"type": "SSN", "val": "691-76-2930"}]}
+{"text": "How do you solve a second-order linear differential equation with constant coefficients?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Identification verification: ID EMP-80856271, state of issuance: CA.", "label": 1, "pii_type": "id_card", "entities": [{"type": "ID", "val": "EMP-80856271"}]}
+{"text": "How do you solve a second-order linear differential equation with constant coefficients?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Billing update: Card number 8258-6772-6163-6319, expiration 09/28.", "label": 1, "pii_type": "credit_card", "entities": [{"type": "CREDIT_CARD", "val": "8258-6772-6163-6319"}]}
+{"text": "If you need further information, reach me at (325) 359-8884 or john.80@university.edu.", "label": 1, "pii_type": "email_phone", "entities": [{"type": "EMAIL", "val": "john.80@university.edu"}, {"type": "PHONE", "val": "(325) 359-8884"}]}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Employee record lookup request for ID card number: DL-84347955.", "label": 1, "pii_type": "id_card", "entities": [{"type": "ID", "val": "DL-84347955"}]}
+{"text": "Please update my file with SSN: 663-88-1852 as requested.", "label": 1, "pii_type": "ssn", "entities": [{"type": "SSN", "val": "663-88-1852"}]}
+{"text": "I need to report an inquiry associated with SSN 479-81-8925.", "label": 1, "pii_type": "ssn", "entities": [{"type": "SSN", "val": "479-81-8925"}]}
+{"text": "Please process refund to payment card 6276-2809-2577-9572.", "label": 1, "pii_type": "credit_card", "entities": [{"type": "CREDIT_CARD", "val": "6276-2809-2577-9572"}]}
+{"text": "I was born on 1982-03-13 and I am currently 44 years old.", "label": 1, "pii_type": "age_dob", "entities": [{"type": "AGE", "val": "44"}, {"type": "DOB", "val": "1982-03-13"}]}
+{"text": "Charge the payment of \\$150 to my credit card number 8168-5828-9892-9029.", "label": 1, "pii_type": "credit_card", "entities": [{"type": "CREDIT_CARD", "val": "8168-5828-9892-9029"}]}
+{"text": "My Social Security Number is 587-88-1639, please verify my application status.", "label": 1, "pii_type": "ssn", "entities": [{"type": "SSN", "val": "587-88-1639"}]}
+{"text": "Patient medical chart: Age 31, Date of Birth 1995-05-20.", "label": 1, "pii_type": "age_dob", "entities": [{"type": "AGE", "val": "31"}, {"type": "DOB", "val": "1995-05-20"}]}
+{"text": "Age verification statement: I am 52 years of age.", "label": 1, "pii_type": "age_dob", "entities": [{"type": "AGE", "val": "52"}, {"type": "DOB", "val": "1974-10-21"}]}
+{"text": "Prove that the square root of 2 is an irrational number.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What were the major economic causes of the French Revolution?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Location confirmation: User resides at 7215 Main St, Austin, MA 64594.", "label": 1, "pii_type": "address", "entities": [{"type": "ADDRESS", "val": "7215 Main St, Austin, MA 64594"}]}
+{"text": "What is the second law of thermodynamics and entropy?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Please process refund to payment card 4161-1349-7189-6868.", "label": 1, "pii_type": "credit_card", "entities": [{"type": "CREDIT_CARD", "val": "4161-1349-7189-6868"}]}
+{"text": "How do you solve a second-order linear differential equation with constant coefficients?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Location confirmation: User resides at 455 Cedar Ln, Denver, CO 46170.", "label": 1, "pii_type": "address", "entities": [{"type": "ADDRESS", "val": "455 Cedar Ln, Denver, CO 46170"}]}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Patient medical chart: Age 74, Date of Birth 1952-11-05.", "label": 1, "pii_type": "age_dob", "entities": [{"type": "AGE", "val": "74"}, {"type": "DOB", "val": "1952-11-05"}]}
+{"text": "Employee record lookup request for ID card number: TAX-02770384.", "label": 1, "pii_type": "id_card", "entities": [{"type": "ID", "val": "TAX-02770384"}]}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Calculate my retirement benefits. I am 52 years old (DOB: 1974-08-25).", "label": 1, "pii_type": "age_dob", "entities": [{"type": "AGE", "val": "52"}, {"type": "DOB", "val": "1974-08-25"}]}
+{"text": "Contact details: Email: alex.91@company.org, Direct Phone: (532) 115-3742.", "label": 1, "pii_type": "email_phone", "entities": [{"type": "EMAIL", "val": "alex.91@company.org"}, {"type": "PHONE", "val": "(532) 115-3742"}]}
+{"text": "I was born on 1976-12-23 and I am currently 50 years old.", "label": 1, "pii_type": "age_dob", "entities": [{"type": "AGE", "val": "50"}, {"type": "DOB", "val": "1976-12-23"}]}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Explain the mechanism of CRISPR-Cas9 gene editing in molecular biology.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Age verification statement: I am 63 years of age.", "label": 1, "pii_type": "age_dob", "entities": [{"type": "AGE", "val": "63"}, {"type": "DOB", "val": "1963-06-28"}]}
+{"text": "User verification form: Name: Confidential, SSN: 703-99-2600.", "label": 1, "pii_type": "ssn", "entities": [{"type": "SSN", "val": "703-99-2600"}]}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Explain the difference between process and thread in operating systems.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Contact details: Email: sarah.26@company.org, Direct Phone: (438) 424-6690.", "label": 1, "pii_type": "email_phone", "entities": [{"type": "EMAIL", "val": "sarah.26@company.org"}, {"type": "PHONE", "val": "(438) 424-6690"}]}
+{"text": "Here is my national identity document number: PASSPORT-00369155.", "label": 1, "pii_type": "id_card", "entities": [{"type": "ID", "val": "PASSPORT-00369155"}]}
+{"text": "Location confirmation: User resides at 1662 Park Rd, Seattle, CA 88018.", "label": 1, "pii_type": "address", "entities": [{"type": "ADDRESS", "val": "1662 Park Rd, Seattle, CA 88018"}]}
+{"text": "If you need further information, reach me at (209) 143-8786 or sarah.60@yahoo.com.", "label": 1, "pii_type": "email_phone", "entities": [{"type": "EMAIL", "val": "sarah.60@yahoo.com"}, {"type": "PHONE", "val": "(209) 143-8786"}]}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Patient medical chart: Age 35, Date of Birth 1991-12-18.", "label": 1, "pii_type": "age_dob", "entities": [{"type": "AGE", "val": "35"}, {"type": "DOB", "val": "1991-12-18"}]}
+{"text": "My driver license ID is DL-95211179. Can you check if it is valid?", "label": 1, "pii_type": "id_card", "entities": [{"type": "ID", "val": "DL-95211179"}]}
+{"text": "Prove that the square root of 2 is an irrational number.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "My Social Security Number is 195-71-3135, please verify my application status.", "label": 1, "pii_type": "ssn", "entities": [{"type": "SSN", "val": "195-71-3135"}]}
+{"text": "Explain the mechanism of CRISPR-Cas9 gene editing in molecular biology.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Please send the receipt to my email michael.92@company.org or call me at (587) 325-5308.", "label": 1, "pii_type": "email_phone", "entities": [{"type": "EMAIL", "val": "michael.92@company.org"}, {"type": "PHONE", "val": "(587) 325-5308"}]}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What were the major economic causes of the French Revolution?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Please update my file with SSN: 518-56-2746 as requested.", "label": 1, "pii_type": "ssn", "entities": [{"type": "SSN", "val": "518-56-2746"}]}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Please process refund to payment card 2153-5979-2276-4537.", "label": 1, "pii_type": "credit_card", "entities": [{"type": "CREDIT_CARD", "val": "2153-5979-2276-4537"}]}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "My residential address for delivery is 9541 Main St, Springfield, WA 60010.", "label": 1, "pii_type": "address", "entities": [{"type": "ADDRESS", "val": "9541 Main St, Springfield, WA 60010"}]}
+{"text": "Please process refund to payment card 1955-5355-9667-1666.", "label": 1, "pii_type": "credit_card", "entities": [{"type": "CREDIT_CARD", "val": "1955-5355-9667-1666"}]}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Identification verification: ID TAX-07595794, state of issuance: CA.", "label": 1, "pii_type": "id_card", "entities": [{"type": "ID", "val": "TAX-07595794"}]}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What were the major economic causes of the French Revolution?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "How do I implement a binary search tree in Python with insert and delete methods?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Please update my file with SSN: 237-42-8817 as requested.", "label": 1, "pii_type": "ssn", "entities": [{"type": "SSN", "val": "237-42-8817"}]}
+{"text": "Please process refund to payment card 3931-7802-2728-6864.", "label": 1, "pii_type": "credit_card", "entities": [{"type": "CREDIT_CARD", "val": "3931-7802-2728-6864"}]}
+{"text": "Charge the payment of \\$150 to my credit card number 8515-7997-2705-3733.", "label": 1, "pii_type": "credit_card", "entities": [{"type": "CREDIT_CARD", "val": "8515-7997-2705-3733"}]}
+{"text": "Contact details: Email: lisa.11@yahoo.com, Direct Phone: (292) 254-1241.", "label": 1, "pii_type": "email_phone", "entities": [{"type": "EMAIL", "val": "lisa.11@yahoo.com"}, {"type": "PHONE", "val": "(292) 254-1241"}]}
+{"text": "If you need further information, reach me at (219) 255-1813 or lisa.34@outlook.com.", "label": 1, "pii_type": "email_phone", "entities": [{"type": "EMAIL", "val": "lisa.34@outlook.com"}, {"type": "PHONE", "val": "(219) 255-1813"}]}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What were the major economic causes of the French Revolution?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "I need to report an inquiry associated with SSN 334-71-7246.", "label": 1, "pii_type": "ssn", "entities": [{"type": "SSN", "val": "334-71-7246"}]}
+{"text": "What is the second law of thermodynamics and entropy?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What is the second law of thermodynamics and entropy?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Please process refund to payment card 3207-5107-1646-8951.", "label": 1, "pii_type": "credit_card", "entities": [{"type": "CREDIT_CARD", "val": "3207-5107-1646-8951"}]}
+{"text": "Contact details: Email: alex.53@company.org, Direct Phone: (519) 904-9165.", "label": 1, "pii_type": "email_phone", "entities": [{"type": "EMAIL", "val": "alex.53@company.org"}, {"type": "PHONE", "val": "(519) 904-9165"}]}
+{"text": "Give me a step-by-step recipe for authentic Italian Margherita pizza dough.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Write a SQL query to select the top 5 highest-paid employees in a department.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "User verification form: Name: Confidential, SSN: 211-12-4315.", "label": 1, "pii_type": "ssn", "entities": [{"type": "SSN", "val": "211-12-4315"}]}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "My residential address for delivery is 5045 Maple Dr, Austin, TX 10860.", "label": 1, "pii_type": "address", "entities": [{"type": "ADDRESS", "val": "5045 Maple Dr, Austin, TX 10860"}]}
+{"text": "Contact details: Email: david.11@gmail.com, Direct Phone: (735) 934-3233.", "label": 1, "pii_type": "email_phone", "entities": [{"type": "EMAIL", "val": "david.11@gmail.com"}, {"type": "PHONE", "val": "(735) 934-3233"}]}
+{"text": "Please send the receipt to my email david.11@company.org or call me at (499) 711-4788.", "label": 1, "pii_type": "email_phone", "entities": [{"type": "EMAIL", "val": "david.11@company.org"}, {"type": "PHONE", "val": "(499) 711-4788"}]}
+{"text": "User verification form: Name: Confidential, SSN: 796-60-4337.", "label": 1, "pii_type": "ssn", "entities": [{"type": "SSN", "val": "796-60-4337"}]}
+{"text": "Calculate my retirement benefits. I am 28 years old (DOB: 1998-11-13).", "label": 1, "pii_type": "age_dob", "entities": [{"type": "AGE", "val": "28"}, {"type": "DOB", "val": "1998-11-13"}]}
+{"text": "Age verification statement: I am 76 years of age.", "label": 1, "pii_type": "age_dob", "entities": [{"type": "AGE", "val": "76"}, {"type": "DOB", "val": "1950-11-24"}]}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Calculate my retirement benefits. I am 75 years old (DOB: 1951-02-13).", "label": 1, "pii_type": "age_dob", "entities": [{"type": "AGE", "val": "75"}, {"type": "DOB", "val": "1951-02-13"}]}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Please update my file with SSN: 253-87-2577 as requested.", "label": 1, "pii_type": "ssn", "entities": [{"type": "SSN", "val": "253-87-2577"}]}
+{"text": "Calculate my retirement benefits. I am 27 years old (DOB: 1999-02-06).", "label": 1, "pii_type": "age_dob", "entities": [{"type": "AGE", "val": "27"}, {"type": "DOB", "val": "1999-02-06"}]}
+{"text": "How do I implement a binary search tree in Python with insert and delete methods?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "My residential address for delivery is 9524 Main St, Austin, IL 76155.", "label": 1, "pii_type": "address", "entities": [{"type": "ADDRESS", "val": "9524 Main St, Austin, IL 76155"}]}
+{"text": "Please send the receipt to my email david.60@gmail.com or call me at (756) 581-3975.", "label": 1, "pii_type": "email_phone", "entities": [{"type": "EMAIL", "val": "david.60@gmail.com"}, {"type": "PHONE", "val": "(756) 581-3975"}]}
+{"text": "If you need further information, reach me at (488) 375-3048 or john.33@gmail.com.", "label": 1, "pii_type": "email_phone", "entities": [{"type": "EMAIL", "val": "john.33@gmail.com"}, {"type": "PHONE", "val": "(488) 375-3048"}]}
+{"text": "My Social Security Number is 363-34-1089, please verify my application status.", "label": 1, "pii_type": "ssn", "entities": [{"type": "SSN", "val": "363-34-1089"}]}
+{"text": "Please process refund to payment card 3539-8362-5844-5314.", "label": 1, "pii_type": "credit_card", "entities": [{"type": "CREDIT_CARD", "val": "3539-8362-5844-5314"}]}
+{"text": "Give me a step-by-step recipe for authentic Italian Margherita pizza dough.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Age verification statement: I am 61 years of age.", "label": 1, "pii_type": "age_dob", "entities": [{"type": "AGE", "val": "61"}, {"type": "DOB", "val": "1965-07-21"}]}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Summarize the key events of the Silk Road trade route in ancient history.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Summarize the key events of the Silk Road trade route in ancient history.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Give me a step-by-step recipe for authentic Italian Margherita pizza dough.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Billing update: Card number 2591-2658-4784-9710, expiration 09/28.", "label": 1, "pii_type": "credit_card", "entities": [{"type": "CREDIT_CARD", "val": "2591-2658-4784-9710"}]}
+{"text": "User verification form: Name: Confidential, SSN: 479-15-9680.", "label": 1, "pii_type": "ssn", "entities": [{"type": "SSN", "val": "479-15-9680"}]}
+{"text": "Here is my national identity document number: TAX-01184895.", "label": 1, "pii_type": "id_card", "entities": [{"type": "ID", "val": "TAX-01184895"}]}
+{"text": "Please update my file with SSN: 335-58-7315 as requested.", "label": 1, "pii_type": "ssn", "entities": [{"type": "SSN", "val": "335-58-7315"}]}
+{"text": "Employee record lookup request for ID card number: PASSPORT-06159399.", "label": 1, "pii_type": "id_card", "entities": [{"type": "ID", "val": "PASSPORT-06159399"}]}
+{"text": "Explain the mechanism of CRISPR-Cas9 gene editing in molecular biology.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Patient medical chart: Age 41, Date of Birth 1985-01-05.", "label": 1, "pii_type": "age_dob", "entities": [{"type": "AGE", "val": "41"}, {"type": "DOB", "val": "1985-01-05"}]}
+{"text": "Prove that the square root of 2 is an irrational number.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Here is my national identity document number: DL-22702672.", "label": 1, "pii_type": "id_card", "entities": [{"type": "ID", "val": "DL-22702672"}]}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Location confirmation: User resides at 4043 Cedar Ln, Austin, IL 83812.", "label": 1, "pii_type": "address", "entities": [{"type": "ADDRESS", "val": "4043 Cedar Ln, Austin, IL 83812"}]}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "My residential address for delivery is 3917 Maple Dr, Springfield, CO 43586.", "label": 1, "pii_type": "address", "entities": [{"type": "ADDRESS", "val": "3917 Maple Dr, Springfield, CO 43586"}]}
+{"text": "Please ship the package to my home address: 4262 Washington Blvd, Chicago, IL 57187.", "label": 1, "pii_type": "address", "entities": [{"type": "ADDRESS", "val": "4262 Washington Blvd, Chicago, IL 57187"}]}
+{"text": "My residential address for delivery is 6560 Oak Ave, Seattle, CA 29400.", "label": 1, "pii_type": "address", "entities": [{"type": "ADDRESS", "val": "6560 Oak Ave, Seattle, CA 29400"}]}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What is the second law of thermodynamics and entropy?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Location confirmation: User resides at 7979 Oak Ave, Chicago, IL 83308.", "label": 1, "pii_type": "address", "entities": [{"type": "ADDRESS", "val": "7979 Oak Ave, Chicago, IL 83308"}]}
+{"text": "My residential address for delivery is 9423 Park Rd, Springfield, MA 38499.", "label": 1, "pii_type": "address", "entities": [{"type": "ADDRESS", "val": "9423 Park Rd, Springfield, MA 38499"}]}
+{"text": "Calculate my retirement benefits. I am 47 years old (DOB: 1979-04-24).", "label": 1, "pii_type": "age_dob", "entities": [{"type": "AGE", "val": "47"}, {"type": "DOB", "val": "1979-04-24"}]}
+{"text": "Contact details: Email: chris.90@yahoo.com, Direct Phone: (729) 882-5454.", "label": 1, "pii_type": "email_phone", "entities": [{"type": "EMAIL", "val": "chris.90@yahoo.com"}, {"type": "PHONE", "val": "(729) 882-5454"}]}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Billing update: Card number 9151-3525-5638-6285, expiration 09/28.", "label": 1, "pii_type": "credit_card", "entities": [{"type": "CREDIT_CARD", "val": "9151-3525-5638-6285"}]}
+{"text": "Calculate my retirement benefits. I am 85 years old (DOB: 1941-11-21).", "label": 1, "pii_type": "age_dob", "entities": [{"type": "AGE", "val": "85"}, {"type": "DOB", "val": "1941-11-21"}]}
+{"text": "How do I implement a binary search tree in Python with insert and delete methods?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Write a SQL query to select the top 5 highest-paid employees in a department.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Give me a step-by-step recipe for authentic Italian Margherita pizza dough.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What is the secret to getting a crispy skin on roasted chicken?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Prove that the square root of 2 is an irrational number.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Please process refund to payment card 7579-9268-6529-3591.", "label": 1, "pii_type": "credit_card", "entities": [{"type": "CREDIT_CARD", "val": "7579-9268-6529-3591"}]}
+{"text": "My Social Security Number is 557-99-3650, please verify my application status.", "label": 1, "pii_type": "ssn", "entities": [{"type": "SSN", "val": "557-99-3650"}]}
+{"text": "Location confirmation: User resides at 8005 Washington Blvd, Boston, MA 32662.", "label": 1, "pii_type": "address", "entities": [{"type": "ADDRESS", "val": "8005 Washington Blvd, Boston, MA 32662"}]}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Please ship the package to my home address: 6629 Washington Blvd, Boston, TX 75774.", "label": 1, "pii_type": "address", "entities": [{"type": "ADDRESS", "val": "6629 Washington Blvd, Boston, TX 75774"}]}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Employee record lookup request for ID card number: ID-21465669.", "label": 1, "pii_type": "id_card", "entities": [{"type": "ID", "val": "ID-21465669"}]}
+{"text": "What is the secret to getting a crispy skin on roasted chicken?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Billing update: Card number 4039-1306-6965-4912, expiration 09/28.", "label": 1, "pii_type": "credit_card", "entities": [{"type": "CREDIT_CARD", "val": "4039-1306-6965-4912"}]}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Location confirmation: User resides at 5093 Main St, Seattle, CO 78731.", "label": 1, "pii_type": "address", "entities": [{"type": "ADDRESS", "val": "5093 Main St, Seattle, CO 78731"}]}
+{"text": "I was born on 1996-02-16 and I am currently 30 years old.", "label": 1, "pii_type": "age_dob", "entities": [{"type": "AGE", "val": "30"}, {"type": "DOB", "val": "1996-02-16"}]}
+{"text": "I was born on 1941-03-01 and I am currently 85 years old.", "label": 1, "pii_type": "age_dob", "entities": [{"type": "AGE", "val": "85"}, {"type": "DOB", "val": "1941-03-01"}]}
+{"text": "How do you solve a second-order linear differential equation with constant coefficients?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "My residential address for delivery is 4134 Main St, Seattle, IL 41760.", "label": 1, "pii_type": "address", "entities": [{"type": "ADDRESS", "val": "4134 Main St, Seattle, IL 41760"}]}
+{"text": "Identification verification: ID TAX-94769735, state of issuance: CA.", "label": 1, "pii_type": "id_card", "entities": [{"type": "ID", "val": "TAX-94769735"}]}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Employee record lookup request for ID card number: EMP-90714163.", "label": 1, "pii_type": "id_card", "entities": [{"type": "ID", "val": "EMP-90714163"}]}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What were the major economic causes of the French Revolution?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Prove that the square root of 2 is an irrational number.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "My driver license ID is EMP-44890612. Can you check if it is valid?", "label": 1, "pii_type": "id_card", "entities": [{"type": "ID", "val": "EMP-44890612"}]}
+{"text": "Give me a step-by-step recipe for authentic Italian Margherita pizza dough.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Contact details: Email: david.58@gmail.com, Direct Phone: (324) 886-5078.", "label": 1, "pii_type": "email_phone", "entities": [{"type": "EMAIL", "val": "david.58@gmail.com"}, {"type": "PHONE", "val": "(324) 886-5078"}]}
+{"text": "Please ship the package to my home address: 9462 Cedar Ln, Chicago, WA 16463.", "label": 1, "pii_type": "address", "entities": [{"type": "ADDRESS", "val": "9462 Cedar Ln, Chicago, WA 16463"}]}
+{"text": "Contact details: Email: david.62@yahoo.com, Direct Phone: (270) 286-3238.", "label": 1, "pii_type": "email_phone", "entities": [{"type": "EMAIL", "val": "david.62@yahoo.com"}, {"type": "PHONE", "val": "(270) 286-3238"}]}
+{"text": "If you need further information, reach me at (403) 571-2539 or lisa.41@gmail.com.", "label": 1, "pii_type": "email_phone", "entities": [{"type": "EMAIL", "val": "lisa.41@gmail.com"}, {"type": "PHONE", "val": "(403) 571-2539"}]}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Calculate my retirement benefits. I am 47 years old (DOB: 1979-06-11).", "label": 1, "pii_type": "age_dob", "entities": [{"type": "AGE", "val": "47"}, {"type": "DOB", "val": "1979-06-11"}]}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Employee record lookup request for ID card number: EMP-63655647.", "label": 1, "pii_type": "id_card", "entities": [{"type": "ID", "val": "EMP-63655647"}]}
+{"text": "What are the best strategies for effective time management and productivity?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "I need to report an inquiry associated with SSN 648-64-6990.", "label": 1, "pii_type": "ssn", "entities": [{"type": "SSN", "val": "648-64-6990"}]}
+{"text": "Patient medical chart: Age 62, Date of Birth 1964-08-18.", "label": 1, "pii_type": "age_dob", "entities": [{"type": "AGE", "val": "62"}, {"type": "DOB", "val": "1964-08-18"}]}
+{"text": "Please update my file with SSN: 665-81-8904 as requested.", "label": 1, "pii_type": "ssn", "entities": [{"type": "SSN", "val": "665-81-8904"}]}
+{"text": "What is the secret to getting a crispy skin on roasted chicken?", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Employee record lookup request for ID card number: ID-98839205.", "label": 1, "pii_type": "id_card", "entities": [{"type": "ID", "val": "ID-98839205"}]}
+{"text": "Please send the receipt to my email sarah.66@outlook.com or call me at (574) 522-5256.", "label": 1, "pii_type": "email_phone", "entities": [{"type": "EMAIL", "val": "sarah.66@outlook.com"}, {"type": "PHONE", "val": "(574) 522-5256"}]}
+{"text": "Please send the receipt to my email david.35@outlook.com or call me at (253) 984-4568.", "label": 1, "pii_type": "email_phone", "entities": [{"type": "EMAIL", "val": "david.35@outlook.com"}, {"type": "PHONE", "val": "(253) 984-4568"}]}
+{"text": "Here is my national identity document number: EMP-01279611.", "label": 1, "pii_type": "id_card", "entities": [{"type": "ID", "val": "EMP-01279611"}]}
+{"text": "Billing update: Card number 7014-8439-1011-9289, expiration 09/28.", "label": 1, "pii_type": "credit_card", "entities": [{"type": "CREDIT_CARD", "val": "7014-8439-1011-9289"}]}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Location confirmation: User resides at 927 Park Rd, Chicago, IL 98294.", "label": 1, "pii_type": "address", "entities": [{"type": "ADDRESS", "val": "927 Park Rd, Chicago, IL 98294"}]}
+{"text": "Explain the difference between supervised and unsupervised machine learning.", "label": 0, "pii_type": "none", "entities": []}
+{"text": "Location confirmation: User resides at 6855 Washington Blvd, Boston, WA 93000.", "label": 1, "pii_type": "address", "entities": [{"type": "ADDRESS", "val": "6855 Washington Blvd, Boston, WA 93000"}]}
