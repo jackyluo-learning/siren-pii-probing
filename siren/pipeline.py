@@ -3,7 +3,7 @@ SirenGuard: High-level orchestration pipeline for SIREN framework.
 Combines extraction, probing, adaptive neuron aggregation, MLP classification, and streaming moderation.
 """
 
-from typing import Dict, List, Any, Optional, Union, Tuple
+from typing import Dict, List, Any, Optional, Union, Tuple, Sequence
 import os
 import torch
 import numpy as np
@@ -25,6 +25,8 @@ class SirenGuard:
         extractor: Optional[InternalStateExtractor] = None,
         eta: float = 0.8,
         c_val: float = 0.1,
+        c_grid: Optional[Sequence[float]] = None,
+        average: str = "macro",
         mlp_hidden_dim: int = 512,
         threshold: float = 0.5,
         device: Optional[str] = None
@@ -32,6 +34,8 @@ class SirenGuard:
         self.extractor = extractor
         self.eta = eta
         self.c_val = c_val
+        self.c_grid = list(c_grid) if c_grid is not None else None
+        self.average = average
         self.mlp_hidden_dim = mlp_hidden_dim
         self.threshold = threshold
 
@@ -89,7 +93,9 @@ class SirenGuard:
             y_val_tensor = None
 
         # Step 1: Safety Neuron Localization via L1 linear probing
-        self.probe = SafetyNeuronProbe(eta=self.eta, c_val=self.c_val)
+        self.probe = SafetyNeuronProbe(
+            eta=self.eta, c_val=self.c_val, c_grid=self.c_grid, average=self.average
+        )
         safety_neurons, layer_f1_scores = self.probe.fit_all_layers(
             layer_activations_train=layer_activations_train,
             y_train=y_train,

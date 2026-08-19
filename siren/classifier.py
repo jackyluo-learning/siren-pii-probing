@@ -138,7 +138,11 @@ class SirenTrainer:
             "accuracy": float(accuracy_score(all_targets, all_preds)),
             "precision": float(precision_score(all_targets, all_preds, zero_division=0)),
             "recall": float(recall_score(all_targets, all_preds, zero_division=0)),
-            "f1": float(f1_score(all_targets, all_preds, zero_division=0))
+            # Paper reports Macro-F1 to account for class imbalance; keep the legacy
+            # positive-class (binary) F1 too for continuity.
+            "f1": float(f1_score(all_targets, all_preds, average="macro", zero_division=0)),
+            "f1_macro": float(f1_score(all_targets, all_preds, average="macro", zero_division=0)),
+            "f1_binary": float(f1_score(all_targets, all_preds, average="binary", zero_division=0)),
         }
 
         try:
