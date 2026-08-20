@@ -144,9 +144,9 @@ def _run_siren_on_splits(
     y_fit = y_tr[sub]
     if len(sub) < len(y_tr):
         print(f"Fitting layer probes on a balanced subsample of {len(sub)}/{len(y_tr)} "
-              f"train rows (C grid on validation)...")
+              f"train rows (C grid on validation)...", flush=True)
     else:
-        print("Fitting layer probes (C grid on validation)...")
+        print("Fitting layer probes (C grid on validation)...", flush=True)
 
     # Per-layer L1 probe: C chosen on VALIDATION Macro-F1 (paper spec).
     probe = SafetyNeuronProbe(eta=eta, c_grid=PAPER_C_GRID, average="macro")
