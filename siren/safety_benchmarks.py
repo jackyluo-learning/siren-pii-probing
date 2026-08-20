@@ -81,34 +81,32 @@ def _aegis(row) -> List[Sample]:
 
 def _wildguard(row) -> List[Sample]:
     out: List[Sample] = []
-    prompt = row.get("prompt")
+    prompt = (row.get("prompt") or "").strip()
     if prompt and row.get("prompt_harm_label") is not None:
         out.append((prompt, int(str(row["prompt_harm_label"]).strip().lower() == "harmful")))
-    resp = row.get("response")
+    resp = (row.get("response") or "").strip()
     if resp and row.get("response_harm_label") is not None:
-        text = f"{prompt}\n{resp}" if prompt else resp
+        text = f"{prompt}\n{resp}".strip()
         out.append((text, int(str(row["response_harm_label"]).strip().lower() == "harmful")))
     return out
 
 
 def _saferlhf(row) -> List[Sample]:
-    prompt = row.get("prompt", "")
+    prompt = (row.get("prompt") or "").strip()
     out: List[Sample] = []
     for k in (0, 1):
         resp = row.get(f"response_{k}")
         safe = row.get(f"is_response_{k}_safe")
-        if resp is not None and safe is not None:
-            out.append((f"{prompt}\n{resp}", int(not bool(safe))))
+        if resp and safe is not None:
+            out.append((f"{prompt}\n{resp}".strip(), int(not bool(safe))))
     return out
 
 
 def _beavertails(row) -> List[Sample]:
-    prompt = row.get("prompt", "")
-    resp = row.get("response", "")
-    if not (prompt or resp):
-        return []
+    prompt = (row.get("prompt") or "").strip()
+    resp = (row.get("response") or "").strip()
     is_safe = row.get("is_safe")
-    if is_safe is None:
+    if not (prompt or resp) or is_safe is None:
         return []
     return [(f"{prompt}\n{resp}".strip(), int(not bool(is_safe)))]
 
@@ -155,8 +153,10 @@ def _load_one(spec: BenchmarkSpec, cap: int) -> List[Sample]:
     samples: List[Sample] = []
     for row in islice(ds, cap):
         for text, label in spec.to_samples(row):
-            if text and isinstance(text, str):
-                samples.append((text.strip(), int(label)))
+            if isinstance(text, str):
+                t = text.strip()
+                if t:  # drop empty / whitespace-only texts (would 0-length crash)
+                    samples.append((t, int(label)))
     return samples
 
 

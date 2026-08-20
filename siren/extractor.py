@@ -146,8 +146,16 @@ class InternalStateExtractor:
         if attention_mask is not None:
             attention_mask = attention_mask.to(self.device)
 
+        # Guard against an empty tokenization (0-length sequence), which would
+        # otherwise crash attention with a 0-element reshape. Substitute a single
+        # token so a (meaningless but finite) pooled vector is produced and the
+        # per-sample feature/label alignment is preserved.
+        if input_ids.shape[-1] == 0:
+            input_ids = torch.zeros((input_ids.shape[0], 1), dtype=torch.long, device=self.device)
+            attention_mask = torch.ones_like(input_ids)
+
         self.captured_states.clear()
-        
+
         # Forward pass through base LLM (frozen)
         _ = self.model(input_ids=input_ids, attention_mask=attention_mask)
 
