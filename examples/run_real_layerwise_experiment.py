@@ -62,16 +62,30 @@ def load_model_and_extractor(
 
 
 def pool_texts(
-    tokenizer, extractor, texts: Sequence[str], num_layers: int, max_length: int = 128,
+    tokenizer, extractor, texts: Sequence[str], num_layers: int,
+    max_length: int = 128, batch_size: int = 16, show_progress: bool = True,
 ) -> Dict[int, np.ndarray]:
-    """Mean-pool residual-stream activations for each text (paper Eq. 2)."""
+    """
+    Mean-pool residual-stream activations for each text (paper Eq. 2), in batches
+    with a progress bar. Order is preserved so features stay aligned with labels.
+    """
+    try:
+        from tqdm.auto import tqdm
+    except Exception:  # tqdm missing -> no-op
+        def tqdm(x, **k):
+            return x
+
     per_layer: Dict[int, List[np.ndarray]] = {l: [] for l in range(1, num_layers + 1)}
-    for text in texts:
-        enc = tokenizer(text, return_tensors="pt", padding=True,
+    texts = list(texts)
+    starts = range(0, len(texts), batch_size)
+    for start in tqdm(starts, desc="pooling", unit="batch", disable=not show_progress):
+        batch = texts[start:start + batch_size]
+        enc = tokenizer(batch, return_tensors="pt", padding=True,
                         truncation=True, max_length=max_length)
         pooled = extractor.extract_sequence_pooled(enc["input_ids"], enc["attention_mask"])
         for l in range(1, num_layers + 1):
-            per_layer[l].append(pooled[l].squeeze(0).cpu().numpy())
+            arr = pooled[l].cpu().numpy()  # (B, D)
+            per_layer[l].extend(arr[i] for i in range(arr.shape[0]))
     return {l: np.asarray(v) for l, v in per_layer.items()}
 
 
