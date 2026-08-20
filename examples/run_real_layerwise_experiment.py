@@ -102,6 +102,22 @@ def extract_layerwise_features(
     return feats, num_layers
 
 
+def _balanced_subsample(y: np.ndarray, cap: int, seed: int = 42) -> np.ndarray:
+    """Indices of a class-balanced subsample of size <= cap (for probe fitting)."""
+    idx = np.arange(len(y))
+    if cap <= 0 or len(y) <= cap:
+        return idx
+    rng = np.random.RandomState(seed)
+    pos, neg = idx[y == 1], idx[y == 0]
+    k = cap // 2
+    sel = np.concatenate([
+        rng.choice(pos, min(k, len(pos)), replace=False),
+        rng.choice(neg, min(k, len(neg)), replace=False),
+    ])
+    rng.shuffle(sel)
+    return sel
+
+
 def _run_siren_on_splits(
     tr: Dict[int, np.ndarray], y_tr: np.ndarray,
     va: Dict[int, np.ndarray], y_va: np.ndarray,
@@ -110,16 +126,38 @@ def _run_siren_on_splits(
     eta: float = 0.8,
     mlp_hidden_dim: int = 128,
     epochs: int = 20,
+    probe_train_cap: int = 4000,
     device: str = "cpu",
 ) -> Dict[str, object]:
     """Core paper-aligned pipeline on already-split, mean-pooled features."""
+    try:
+        from tqdm.auto import tqdm
+    except Exception:
+        def tqdm(x, **k):
+            return x
+
+    # L1 coordinate descent scales with n_samples; a class-balanced subsample of
+    # the train split keeps probe fitting to minutes on CPU without changing the
+    # (linear) neuron selection materially. Validation/test stay full-size.
+    sub = _balanced_subsample(y_tr, probe_train_cap)
+    tr_fit = {l: tr[l][sub] for l in range(1, num_layers + 1)}
+    y_fit = y_tr[sub]
+    if len(sub) < len(y_tr):
+        print(f"Fitting layer probes on a balanced subsample of {len(sub)}/{len(y_tr)} "
+              f"train rows (C grid on validation)...")
+    else:
+        print("Fitting layer probes (C grid on validation)...")
+
     # Per-layer L1 probe: C chosen on VALIDATION Macro-F1 (paper spec).
     probe = SafetyNeuronProbe(eta=eta, c_grid=PAPER_C_GRID, average="macro")
-    safety_neurons, val_f1 = probe.fit_all_layers(tr, y_tr, va, y_va)
-
-    # Plotted curve = generalization, i.e. per-layer TEST Macro-F1.
-    test_f1 = {}
-    for l in range(1, num_layers + 1):
+    safety_neurons: Dict[int, List[int]] = {}
+    val_f1: Dict[int, float] = {}
+    test_f1: Dict[int, float] = {}
+    for l in tqdm(range(1, num_layers + 1), desc="probes", unit="layer"):
+        neurons, vf1 = probe.fit_layer(l, tr_fit[l], y_fit, va[l], y_va)
+        safety_neurons[l] = neurons
+        val_f1[l] = vf1
+        # Plotted curve = generalization, i.e. per-layer TEST Macro-F1.
         preds = probe.layer_probes[l].predict(te[l])
         test_f1[l] = float(f1_score(y_te, preds, average="macro", zero_division=0))
 
@@ -156,6 +194,7 @@ def measure_layerwise_f1(
     eta: float = 0.8,
     mlp_hidden_dim: int = 128,
     epochs: int = 20,
+    probe_train_cap: int = 4000,
     seed: int = 42,
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
 ) -> Dict[str, object]:
@@ -178,7 +217,8 @@ def measure_layerwise_f1(
 
     return _run_siren_on_splits(
         take(tr_i), labels[tr_i], take(va_i), labels[va_i], take(te_i), labels[te_i],
-        num_layers, eta=eta, mlp_hidden_dim=mlp_hidden_dim, epochs=epochs, device=device)
+        num_layers, eta=eta, mlp_hidden_dim=mlp_hidden_dim, epochs=epochs,
+        probe_train_cap=probe_train_cap, device=device)
 
 
 def measure_layerwise_f1_presplit(
@@ -189,6 +229,7 @@ def measure_layerwise_f1_presplit(
     eta: float = 0.8,
     mlp_hidden_dim: int = 256,
     epochs: int = 20,
+    probe_train_cap: int = 4000,
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
 ) -> Dict[str, object]:
     """
@@ -204,7 +245,8 @@ def measure_layerwise_f1_presplit(
     extractor.remove_hooks()
     return _run_siren_on_splits(
         tr, np.asarray(y_train), va, np.asarray(y_val), te, np.asarray(y_test),
-        num_layers, eta=eta, mlp_hidden_dim=mlp_hidden_dim, epochs=epochs, device=device)
+        num_layers, eta=eta, mlp_hidden_dim=mlp_hidden_dim, epochs=epochs,
+        probe_train_cap=probe_train_cap, device=device)
 
 
 # --------------------------------------------------------------------------- #

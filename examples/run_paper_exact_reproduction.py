@@ -37,6 +37,7 @@ def run_reproduction(
     model_name: str = "Qwen/Qwen3-4B",
     cap_per_dataset: int = 2000,
     only=None,
+    probe_train_cap: int = 4000,
     output_fig: str = "exact_figure7_reproduction.png",
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
 ):
@@ -54,7 +55,7 @@ def run_reproduction(
         corpus.train_texts, corpus.y_train,
         corpus.val_texts, corpus.y_val,
         corpus.test_texts, corpus.y_test,
-        mlp_hidden_dim=256, epochs=20, device=device,
+        mlp_hidden_dim=256, epochs=20, probe_train_cap=probe_train_cap, device=device,
     )
 
     print("\nPer-layer TEST Macro-F1 (C selected on validation):")
@@ -84,7 +85,10 @@ if __name__ == "__main__":
                         help="max rows streamed per benchmark")
     parser.add_argument("--only", type=str, default=None,
                         help="comma-separated subset, e.g. 'ToxicChat,BeaverTails'")
+    parser.add_argument("--probe-cap", type=int, default=4000,
+                        help="balanced train-row cap for L1 probe fitting (0 = use all)")
     parser.add_argument("--output", type=str, default="exact_figure7_reproduction.png")
     args = parser.parse_args()
     only = [s.strip() for s in args.only.split(",")] if args.only else None
-    run_reproduction(args.model, cap_per_dataset=args.cap, only=only, output_fig=args.output)
+    run_reproduction(args.model, cap_per_dataset=args.cap, only=only,
+                     probe_train_cap=args.probe_cap, output_fig=args.output)
