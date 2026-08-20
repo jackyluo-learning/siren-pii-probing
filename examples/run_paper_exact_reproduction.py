@@ -23,7 +23,8 @@ import warnings
 
 import torch
 
-from run_real_layerwise_experiment import measure_layerwise_f1_presplit, plot_layerwise
+from run_real_layerwise_experiment import (
+    measure_layerwise_f1_presplit, plot_layerwise, save_siren_state)
 from siren.safety_benchmarks import load_safety_benchmarks
 
 warnings.filterwarnings("ignore")
@@ -38,6 +39,7 @@ def run_reproduction(
     cap_per_dataset: int = 2000,
     only=None,
     probe_train_cap: int = 4000,
+    save_state: str = "checkpoints/siren_figure7_state.pt",
     output_fig: str = "exact_figure7_reproduction.png",
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
 ):
@@ -68,6 +70,9 @@ def run_reproduction(
     print(f"Datasets loaded                    : {corpus.meta['loaded_datasets']}")
     print(f"Paper reference (Qwen3-4B)         : SIREN={PAPER_SIREN_F1}, Guard={PAPER_GUARD_F1}")
 
+    if save_state:
+        save_siren_state(res, model_name, save_state)
+
     plot_layerwise(
         res["test_f1"], res["siren_test_f1"], output_fig,
         title=f"SIREN reproduction on {model_name.split('/')[-1]} (7-benchmark, measured)",
@@ -87,8 +92,11 @@ if __name__ == "__main__":
                         help="comma-separated subset, e.g. 'ToxicChat,BeaverTails'")
     parser.add_argument("--probe-cap", type=int, default=4000,
                         help="balanced train-row cap for L1 probe fitting (0 = use all)")
+    parser.add_argument("--save-state", type=str, default="checkpoints/siren_figure7_state.pt",
+                        help="where to persist the fitted SIREN (for streaming eval); '' to skip")
     parser.add_argument("--output", type=str, default="exact_figure7_reproduction.png")
     args = parser.parse_args()
     only = [s.strip() for s in args.only.split(",")] if args.only else None
     run_reproduction(args.model, cap_per_dataset=args.cap, only=only,
-                     probe_train_cap=args.probe_cap, output_fig=args.output)
+                     probe_train_cap=args.probe_cap, save_state=args.save_state,
+                     output_fig=args.output)

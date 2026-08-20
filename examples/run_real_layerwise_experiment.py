@@ -183,7 +183,32 @@ def _run_siren_on_splits(
         "safety_neurons": {l: len(v) for l, v in safety_neurons.items()},
         "total_neurons": aggregator.total_feature_dim,
         "siren_test_f1": siren_test_f1,
+        # Fitted objects, so downstream stages (e.g. streaming evaluation) can
+        # reuse this SIREN instead of refitting from scratch.
+        "_safety_neurons": safety_neurons,
+        "_aggregator": aggregator,
+        "_classifier": mlp,
+        "_mlp_hidden_dim": mlp_hidden_dim,
     }
+
+
+def save_siren_state(res: Dict[str, object], model_name: str, path: str, eta: float = 0.8):
+    """
+    Persist a fitted SIREN (safety neurons, alpha_l weights, MLP head) so the
+    streaming evaluation can load it without repeating extraction + probe fitting.
+    """
+    import os
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    torch.save({
+        "model_name": model_name,
+        "eta": eta,
+        "safety_neurons": res["_safety_neurons"],
+        "layer_f1_scores": res["val_f1"],          # alpha_l derives from validation F1
+        "mlp_hidden_dim": res["_mlp_hidden_dim"],
+        "input_dim": res["total_neurons"],
+        "classifier_state_dict": res["_classifier"].state_dict(),
+    }, path)
+    print(f"Saved fitted SIREN state to: '{path}'")
 
 
 def measure_layerwise_f1(

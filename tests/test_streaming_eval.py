@@ -1,0 +1,64 @@
+"""
+Regression tests for the streaming (generation-time) detection path.
+"""
+import numpy as np
+import torch
+import pytest
+
+from siren.aggregator import AdaptiveNeuronAggregator
+from siren.classifier import SirenMLPHead
+from siren.streaming import StreamingModerator
+
+
+class _StubExtractor:
+    """Returns canned prefix-pooled states, so no LLM download is needed."""
+    def __init__(self, states):
+        self._states = states
+
+    def extract_all_prefix_pooled(self, input_ids):
+        return self._states
+
+
+def test_prefix_mean_is_cumulative_mean():
+    # The efficiency trick: prefix mean == cumsum / t along the sequence axis.
+    T, D = 7, 5
+    hs = torch.randn(T, D)
+    cum = torch.cumsum(hs, dim=0) / torch.arange(1, T + 1).unsqueeze(1).float()
+    for t in range(1, T + 1):
+        assert torch.allclose(cum[t - 1], hs[:t].mean(dim=0), atol=1e-6)
+
+
+def test_score_token_stream_returns_one_score_per_token():
+    T, D = 11, 8
+    layers = {1: torch.randn(T, D), 2: torch.randn(T, D)}
+    agg = AdaptiveNeuronAggregator(
+        safety_neurons={1: [0, 1, 2], 2: [3, 4]},
+        layer_f1_scores={1: 0.9, 2: 0.6},
+    )
+    clf = SirenMLPHead(input_dim=agg.total_feature_dim, hidden_dim=16)
+    mod = StreamingModerator(_StubExtractor(layers), agg, clf, threshold=0.5, device="cpu")
+
+    scores = mod.score_token_stream(torch.zeros(1, T, dtype=torch.long))
+    assert scores.shape == (T,)                       # one score per prefix
+    assert np.all((scores >= 0.0) & (scores <= 1.0))  # probabilities
+
+
+def test_first_flag_respects_warmup_and_detection_curve_is_monotonic():
+    from run_streaming_evaluation import first_flag_positions, detection_curve
+
+    # Crosses at position 2 (inside warm-up) and again at 10.
+    s = np.zeros(12)
+    s[1] = 0.99
+    s[9:] = 0.99
+    # No warm-up -> flags at 2; warm-up 8 -> the early spike is ignored, flags at 10.
+    assert first_flag_positions([s], 0.5, min_prefix=1)[0] == 2
+    assert first_flag_positions([s], 0.5, min_prefix=8)[0] == 10
+
+    # Never crossing -> inf, and a sequence shorter than the warm-up never flags.
+    assert np.isinf(first_flag_positions([np.zeros(12)], 0.5, 8)[0])
+    assert np.isinf(first_flag_positions([np.ones(3)], 0.5, 8)[0])
+
+    curve = detection_curve(np.array([3.0, 10.0, np.inf]), max_pos=12)
+    assert np.all(np.diff(curve) >= 0)          # cumulative -> non-decreasing
+    assert curve[2] == pytest.approx(1 / 3)     # only the t=3 one flagged by pos 3
+    assert curve[-1] == pytest.approx(2 / 3)    # the never-flagged one stays out

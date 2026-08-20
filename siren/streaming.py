@@ -5,6 +5,7 @@ and millisecond-level early stopping.
 """
 
 from typing import List, Dict, Any, Optional, Callable, Tuple
+import numpy as np
 import torch
 from siren.extractor import InternalStateExtractor
 from siren.aggregator import AdaptiveNeuronAggregator
@@ -62,6 +63,36 @@ class StreamingModerator:
         harmful_prob = float(probs[0, 1].item())
         pred = 1 if harmful_prob >= self.threshold else 0
         return harmful_prob, pred
+
+    @torch.no_grad()
+    def score_token_stream(
+        self,
+        input_ids: torch.Tensor
+    ) -> "np.ndarray":
+        """
+        Harmfulness score at EVERY token position (paper Eq. 7-9), via a single
+        forward pass over the full sequence.
+
+        The classifier trained on full-sequence features is applied unchanged to
+        prefix-restricted features -- no parameters are updated, matching the
+        paper's strict zero-shot streaming protocol.
+
+        Args:
+            input_ids: Tensor of shape (1, T).
+
+        Returns:
+            scores: np.ndarray of shape (T,) with P(harmful) after each token.
+        """
+        if self.extractor is None:
+            raise ValueError("An extractor is required to score a token stream.")
+
+        # (T, D) per layer -- row t-1 is the mean over prefix s<=t.
+        prefix_states = self.extractor.extract_all_prefix_pooled(input_ids)
+        # Aggregator treats the leading axis as batch, so all T prefixes are
+        # aggregated and classified in one shot.
+        z = self.aggregator.transform(prefix_states).to(self.device)
+        probs = self.classifier.predict_proba(z)[:, 1]
+        return probs.detach().cpu().numpy()
 
     @torch.no_grad()
     def moderate_stream(

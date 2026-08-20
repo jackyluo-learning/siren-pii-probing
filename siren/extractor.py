@@ -182,13 +182,57 @@ class InternalStateExtractor:
     ) -> Dict[int, torch.Tensor]:
         """
         Extract mean-pooled internal states restricted to sequence prefix <= prefix_len.
-        
+
         Args:
             input_ids: Tensor of shape (1, T) or (B, T)
             prefix_len: Active prefix cutoff length t
-            
+
         Returns:
             Dict mapping layer_idx (1..L) to pooled tensor of shape (B, D)
         """
         prefix_ids = input_ids[:, :prefix_len]
         return self.extract_sequence_pooled(prefix_ids)
+
+    @torch.no_grad()
+    def extract_all_prefix_pooled(
+        self,
+        input_ids: torch.Tensor
+    ) -> Dict[int, torch.Tensor]:
+        """
+        Prefix mean-pooled states for EVERY prefix length t = 1..T (paper Eq. 8),
+        computed with a single forward pass.
+
+        In a causal decoder-only LM, position tau attends only to positions <= tau,
+        so the hidden state at tau from one full-sequence forward is identical to
+        the one obtained by feeding only s<=t (for any t >= tau). The prefix mean
+        is therefore a cumulative mean along the sequence axis. This makes
+        streaming evaluation O(T) forward cost instead of O(T^2).
+
+        Args:
+            input_ids: Tensor of shape (1, T) -- a single, unpadded sequence.
+
+        Returns:
+            Dict mapping layer_idx (1..L) to a tensor of shape (T, D), where row t-1
+            is the mean-pooled representation of the prefix s<=t.
+        """
+        if input_ids.dim() != 2 or input_ids.size(0) != 1:
+            raise ValueError("extract_all_prefix_pooled expects input_ids of shape (1, T).")
+
+        input_ids = input_ids.to(self.device)
+        if input_ids.shape[-1] == 0:
+            raise ValueError("Cannot stream-score an empty sequence.")
+
+        attention_mask = torch.ones_like(input_ids)
+        self.captured_states.clear()
+        _ = self.model(input_ids=input_ids, attention_mask=attention_mask)
+
+        seq_len = input_ids.shape[-1]
+        denom = torch.arange(1, seq_len + 1, dtype=torch.float32).unsqueeze(1)  # (T, 1)
+
+        prefix_pooled = {}
+        for layer_idx, hidden_state in self.captured_states.items():
+            # hidden_state: (1, T, D) on CPU (hooks detach to CPU)
+            hs = hidden_state[0].float()
+            prefix_pooled[layer_idx] = torch.cumsum(hs, dim=0) / denom
+
+        return prefix_pooled
