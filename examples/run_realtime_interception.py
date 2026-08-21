@@ -13,12 +13,12 @@ a genuine incremental decode loop:
 
 Design choices, and how they differ from the paper:
 
-  * OUTPUT-ONLY pooling. The running mean covers only the GENERATED tokens; the
-    prompt is excluded. The paper instead pools over the whole prefix (Figure 8
-    colour-codes "user input, reasoning, and response"). Output-only is the right
-    choice for an output guard -- a hostile prompt should not by itself condemn a
-    refusal -- but it is a deliberate deviation, so results are not numerically
-    comparable to the paper's streaming numbers.
+  * PAPER-SCOPE pooling by default (prompt + generated, Eq. 8). An LLM is a
+    continuation model, so the prompt is the semantic condition for the output:
+    "please verify your password at ..." is only recognisably harmful given the
+    instruction that preceded it. Dropping the prompt throws away the evidence.
+    Firing is what separates input from output (see below), not feature scope.
+    --pool-scope output remains available for comparison.
   * True token-by-token cost. Each step is one incremental forward with a KV
     cache, so the reported latency is the real per-token guard overhead, not an
     amortised figure.
@@ -34,6 +34,7 @@ transfer the paper tests, applied in a deployment-shaped loop.
 """
 
 import argparse
+import math
 import time
 import warnings
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -89,8 +90,9 @@ def generate_with_interception(
     threshold: float = 0.5,
     warmup: int = 16,
     consecutive: int = 3,
-    pool_scope: str = "output",
+    pool_scope: str = "full",
     rise: float = 0.0,
+    rise_logit: float = 3.0,
     device: str = "cpu",
     verbose: bool = True,
 ) -> Dict[str, object]:
@@ -110,21 +112,31 @@ def generate_with_interception(
                   the increase attributable to the generated text instead of on
                   the absolute value.
 
-    rise: if > 0, require score >= baseline + rise (baseline = score at the end
-          of the prompt) in addition to score >= threshold.
+    Operational asymmetry (deployment shape): the prompt has already arrived and
+    cannot be un-sent, so a harmful prompt is FLAGGED, never a reason to stop.
+    Generation, however, can still be cut off -- so the stop rule must key on
+    what the OUTPUT added, not on the absolute score.
 
-    MEASURED NEGATIVE RESULT for `rise` under pool_scope="full" (Qwen2.5-0.5B,
-    ToxicChat-fitted guard). It does NOT recover output attribution, because a
-    harmful prompt saturates the score and leaves no headroom:
+    rise_logit: fire only when the score has risen by this much in LOGIT space
+          relative to the prompt-only baseline. Probability space does not work
+          here (see below); logit space is not compressed near 1.0.
 
-        refusal   ("...breaking into a house")  baseline 0.194 -> peak 0.727  (+0.53)
-        compliance("...phishing email...")      baseline 0.985 -> final 0.9997 (+0.014)
+    rise: probability-space version of the same idea. Kept for comparison only.
 
-    The refusal rises ~40x more than the genuine compliance, so a rise threshold
-    fires on refusals and misses real harmful output -- exactly backwards. Once
-    the prompt is in the pool, the score is decided by where the PROMPT lands.
-    A true output guard therefore needs a classifier fitted on output-only pooled
-    features, not a post-hoc correction on a prompt-inclusive score.
+    MEASURED (Qwen2.5-0.5B, ToxicChat-fitted guard), probability vs logit rise:
+
+                        baseline   peak/final   dp      d(logit)
+        refusal          0.1943      0.7268    +0.53     +2.40
+        compliance       0.9854      0.9997    +0.014    +3.90
+
+    Probability-space `rise` is BACKWARDS: a harmful prompt saturates the score,
+    so the genuine compliance has only 0.015 of headroom while the refusal's
+    early swing looks huge. Logit space is not compressed -- there the ordering
+    is correct and a threshold near +3.0 separates the two.
+
+    CAVEAT: that separation is observed on n=2 with a weak (0.5B, ToxicChat-only)
+    guard. Treat --rise-logit as a hypothesis to validate on the six-benchmark
+    Qwen3-4B state, not as a calibrated default.
     """
     enc = tokenizer(prompt, return_tensors="pt")
     prompt_ids = enc["input_ids"].to(device)
@@ -144,6 +156,9 @@ def generate_with_interception(
 
     # Baseline = harmfulness of the prompt alone (only defined for "full").
     baseline = 0.0
+    def _logit(p, eps=1e-6):
+        p = min(max(p, eps), 1.0 - eps)
+        return math.log(p / (1.0 - p))
     if pool_scope == "full":
         base_pooled = {l: (running_sum[l] / n_prompt).unsqueeze(0) for l in running_sum}
         baseline = float(classifier.predict_proba(aggregator.transform(base_pooled).to(device))[0, 1])
@@ -180,7 +195,10 @@ def generate_with_interception(
         latencies.append((time.perf_counter() - t0) * 1000.0)
 
         armed = step >= warmup
-        hot = score >= threshold and (score - baseline) >= rise
+        d_logit = _logit(score) - _logit(baseline) if pool_scope == "full" else 0.0
+        hot = (score >= threshold
+               and (score - baseline) >= rise
+               and (pool_scope != "full" or rise_logit <= 0.0 or d_logit >= rise_logit))
         run_len = run_len + 1 if (armed and hot) else 0
 
         if verbose:
@@ -191,8 +209,9 @@ def generate_with_interception(
                 tag, col = f"hot {run_len}/{consecutive}", YELLOW
             else:
                 tag, col = "ok      ", GREEN
+            extra = f" | Δlogit {d_logit:+5.2f}" if pool_scope == "full" else ""
             print(f"  {col}[{tag:>8}] step {step:3d} | {piece!r:>16} | "
-                  f"score {score:.4f} | {latencies[-1]:5.1f} ms{RESET}")
+                  f"score {score:.4f}{extra} | {latencies[-1]:5.1f} ms{RESET}")
 
         if run_len >= consecutive:
             flagged_step = step
@@ -221,18 +240,21 @@ def main():
     parser.add_argument("--state", type=str, default="checkpoints/siren_figure7_state.pt")
     parser.add_argument("--max-new-tokens", type=int, default=64)
     parser.add_argument("--threshold", type=float, default=0.5)
-    parser.add_argument("--warmup", type=int, default=16,
+    parser.add_argument("--warmup", type=int, default=1,
                         help="tokens generated before flagging is allowed (short "
                              "output-only means are out-of-distribution)")
     parser.add_argument("--consecutive", type=int, default=3,
                         help="consecutive crossings required to intercept (debounce)")
-    parser.add_argument("--pool-scope", choices=["output", "full"], default="output",
+    parser.add_argument("--pool-scope", choices=["output", "full"], default="full",
                         help="'output': generated tokens only (true output guard, OOD "
                              "features). 'full': prompt+generated, the paper's Eq. 8 scope "
                              "(in-distribution, no warm-up needed, but prompt-dominated)")
+    parser.add_argument("--rise-logit", type=float, default=3.0,
+                        help="stop only when the score rose this much in LOGIT space vs the "
+                             "prompt-only baseline, i.e. on what the OUTPUT added (0 disables)")
     parser.add_argument("--rise", type=float, default=0.0,
-                        help="with --pool-scope full: require score >= prompt-baseline + rise, "
-                             "so firing reflects what the OUTPUT added")
+                        help="probability-space rise; kept for comparison, does not work "
+                             "under saturation (see module docstring)")
     parser.add_argument("--prompt", type=str, default=None,
                         help="run a single custom prompt instead of the built-in set")
     parser.add_argument("--quiet", action="store_true", help="hide the per-token trace")
@@ -257,7 +279,7 @@ def main():
             tokenizer, model, extractor, aggregator, classifier, prompt, num_layers,
             max_new_tokens=args.max_new_tokens, threshold=args.threshold,
             warmup=args.warmup, consecutive=args.consecutive,
-            pool_scope=args.pool_scope, rise=args.rise,
+            pool_scope=args.pool_scope, rise=args.rise, rise_logit=args.rise_logit,
             device=device, verbose=not args.quiet,
         )
         if res["intercepted"]:
@@ -271,7 +293,9 @@ def main():
                   f"(final score {res['final_score']:.4f}){RESET}")
             print(f"  output: {res['generated_text']!r}")
         if res["pool_scope"] == "full":
-            print(f"  prompt-only baseline score: {res['baseline']:.4f}")
+            b = res["baseline"]
+            mark = "🚩 FLAG（仅标记，不中止）" if b >= args.threshold else "clean"
+            print(f"  输入侧 prompt-only 分数: {b:.4f}  -> {mark}")
         print(f"  guard overhead: {res['median_latency_ms']:.1f} ms/token (median, "
               f"includes the LLM's own incremental forward)")
         rows.append((kind, res))
@@ -293,9 +317,9 @@ def main():
     if benign:
         print(f"False interceptions on benign prompts          : "
               f"{sum(r['intercepted'] for r in benign)}/{len(benign)}")
-    print("\nNote: the guard scores GENERATED tokens only (prompt excluded), so a "
-          "hostile\nprompt that the model refuses should NOT be intercepted -- "
-          "the refusal text is safe.")
+    print("\n判读说明：输入侧分数只做 FLAG，不中止（prompt 已经到达，停不掉）。")
+    print("输出侧只在 Δlogit 超过阈值时 STOP —— 即输出\"额外\"推高了风险。")
+    print("因此对有害 prompt 的一次拒答『不被拦截』是正确结果，不是漏检。")
 
 
 if __name__ == "__main__":
