@@ -89,23 +89,65 @@ def generate_with_interception(
     threshold: float = 0.5,
     warmup: int = 16,
     consecutive: int = 3,
+    pool_scope: str = "output",
+    rise: float = 0.0,
     device: str = "cpu",
     verbose: bool = True,
 ) -> Dict[str, object]:
     """
-    Incremental decode with a live output-only guard. Stops at the first token
-    whose running-mean representation crosses the threshold.
+    Incremental decode with a live guard. Stops at the first token whose
+    running-mean representation satisfies the firing rule.
+
+    pool_scope:
+      "output" -- mean over generated tokens only. A true output guard, but the
+                  features never contain the position-0 attention-sink token, so
+                  they sit ~10x below the norm regime the classifier was fitted
+                  on, and tiny-t means are unstable (hence `warmup`).
+      "full"   -- mean over prompt + generated tokens (the paper's Eq. 8 scope).
+                  The sink token is present and t starts at len(prompt), so the
+                  features are in-distribution and no warm-up is needed. The
+                  score is then prompt-dominated early, so use `rise` to fire on
+                  the increase attributable to the generated text instead of on
+                  the absolute value.
+
+    rise: if > 0, require score >= baseline + rise (baseline = score at the end
+          of the prompt) in addition to score >= threshold.
+
+    MEASURED NEGATIVE RESULT for `rise` under pool_scope="full" (Qwen2.5-0.5B,
+    ToxicChat-fitted guard). It does NOT recover output attribution, because a
+    harmful prompt saturates the score and leaves no headroom:
+
+        refusal   ("...breaking into a house")  baseline 0.194 -> peak 0.727  (+0.53)
+        compliance("...phishing email...")      baseline 0.985 -> final 0.9997 (+0.014)
+
+    The refusal rises ~40x more than the genuine compliance, so a rise threshold
+    fires on refusals and misses real harmful output -- exactly backwards. Once
+    the prompt is in the pool, the score is decided by where the PROMPT lands.
+    A true output guard therefore needs a classifier fitted on output-only pooled
+    features, not a post-hoc correction on a prompt-inclusive score.
     """
     enc = tokenizer(prompt, return_tensors="pt")
     prompt_ids = enc["input_ids"].to(device)
 
-    # --- prefill: the prompt's own states are captured but deliberately dropped,
-    #     because this guard judges the OUTPUT only.
+    extractor.captured_states.clear()
     out = model(input_ids=prompt_ids, use_cache=True)
     past = out.past_key_values
     next_tok = out.logits[:, -1, :].argmax(dim=-1, keepdim=True)
 
     running_sum: Dict[int, torch.Tensor] = {}
+    n_prompt = 0
+    # Paper scope: seed the running sum with the prompt's states, sink included.
+    if pool_scope == "full":
+        n_prompt = prompt_ids.shape[-1]
+        for l in range(1, num_layers + 1):
+            running_sum[l] = extractor.captured_states[l][0].float().sum(dim=0)
+
+    # Baseline = harmfulness of the prompt alone (only defined for "full").
+    baseline = 0.0
+    if pool_scope == "full":
+        base_pooled = {l: (running_sum[l] / n_prompt).unsqueeze(0) for l in running_sum}
+        baseline = float(classifier.predict_proba(aggregator.transform(base_pooled).to(device))[0, 1])
+
     n_gen = 0
     gen_ids: List[int] = []
     scores: List[float] = []
@@ -122,10 +164,11 @@ def generate_with_interception(
 
         # Hooks now hold this single new token's state per layer: (1, 1, D).
         pooled = {}
+        denom = n_prompt + step        # "full": prompt+generated;  "output": step
         for l in range(1, num_layers + 1):
             h = extractor.captured_states[l][0, -1].float()      # (D,)
             running_sum[l] = h if l not in running_sum else running_sum[l] + h
-            pooled[l] = (running_sum[l] / step).unsqueeze(0)     # (1, D) output-only mean
+            pooled[l] = (running_sum[l] / denom).unsqueeze(0)    # (1, D)
         n_gen = step
 
         z = aggregator.transform(pooled).to(device)
@@ -137,7 +180,8 @@ def generate_with_interception(
         latencies.append((time.perf_counter() - t0) * 1000.0)
 
         armed = step >= warmup
-        run_len = run_len + 1 if (armed and score >= threshold) else 0
+        hot = score >= threshold and (score - baseline) >= rise
+        run_len = run_len + 1 if (armed and hot) else 0
 
         if verbose:
             piece = tokenizer.decode([tok_id]).replace("\n", "\\n")
@@ -159,6 +203,8 @@ def generate_with_interception(
     text = tokenizer.decode(gen_ids, skip_special_tokens=True)
     return {
         "prompt": prompt,
+        "pool_scope": pool_scope,
+        "baseline": baseline,
         "generated_text": text,
         "generated_tokens": n_gen,
         "scores": np.asarray(scores),
@@ -180,6 +226,13 @@ def main():
                              "output-only means are out-of-distribution)")
     parser.add_argument("--consecutive", type=int, default=3,
                         help="consecutive crossings required to intercept (debounce)")
+    parser.add_argument("--pool-scope", choices=["output", "full"], default="output",
+                        help="'output': generated tokens only (true output guard, OOD "
+                             "features). 'full': prompt+generated, the paper's Eq. 8 scope "
+                             "(in-distribution, no warm-up needed, but prompt-dominated)")
+    parser.add_argument("--rise", type=float, default=0.0,
+                        help="with --pool-scope full: require score >= prompt-baseline + rise, "
+                             "so firing reflects what the OUTPUT added")
     parser.add_argument("--prompt", type=str, default=None,
                         help="run a single custom prompt instead of the built-in set")
     parser.add_argument("--quiet", action="store_true", help="hide the per-token trace")
@@ -204,6 +257,7 @@ def main():
             tokenizer, model, extractor, aggregator, classifier, prompt, num_layers,
             max_new_tokens=args.max_new_tokens, threshold=args.threshold,
             warmup=args.warmup, consecutive=args.consecutive,
+            pool_scope=args.pool_scope, rise=args.rise,
             device=device, verbose=not args.quiet,
         )
         if res["intercepted"]:
@@ -216,6 +270,8 @@ def main():
             print(f"\n  {GREEN}✅ COMPLETED without interception "
                   f"(final score {res['final_score']:.4f}){RESET}")
             print(f"  output: {res['generated_text']!r}")
+        if res["pool_scope"] == "full":
+            print(f"  prompt-only baseline score: {res['baseline']:.4f}")
         print(f"  guard overhead: {res['median_latency_ms']:.1f} ms/token (median, "
               f"includes the LLM's own incremental forward)")
         rows.append((kind, res))
