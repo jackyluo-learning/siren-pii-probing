@@ -92,7 +92,7 @@ def generate_with_interception(
     consecutive: int = 3,
     pool_scope: str = "full",
     rise: float = 0.0,
-    rise_logit: float = 3.0,
+    rise_logit: float = 0.0,
     device: str = "cpu",
     verbose: bool = True,
 ) -> Dict[str, object]:
@@ -117,11 +117,14 @@ def generate_with_interception(
     Generation, however, can still be cut off -- so the stop rule must key on
     what the OUTPUT added, not on the absolute score.
 
-    rise_logit: fire only when the score has risen by this much in LOGIT space
-          relative to the prompt-only baseline. Probability space does not work
-          here (see below); logit space is not compressed near 1.0.
+    The stop rule is a plain absolute threshold on the prefix score -- provided
+    the guard was trained with response-level labels (--response-only in module
+    4). Then "harmful prompt + refusal" scores low and "harmful prompt +
+    compliance" scores high, which is exactly the distinction early-stop needs.
 
-    rise: probability-space version of the same idea. Kept for comparison only.
+    rise_logit / rise: only needed for a MIXED-label guard, where the score
+          tracks the prompt and cannot separate a refusal from a compliance.
+          See the measurement note below.
 
     MEASURED (Qwen2.5-0.5B, ToxicChat-fitted guard), probability vs logit rise:
 
@@ -249,9 +252,10 @@ def main():
                         help="'output': generated tokens only (true output guard, OOD "
                              "features). 'full': prompt+generated, the paper's Eq. 8 scope "
                              "(in-distribution, no warm-up needed, but prompt-dominated)")
-    parser.add_argument("--rise-logit", type=float, default=3.0,
-                        help="stop only when the score rose this much in LOGIT space vs the "
-                             "prompt-only baseline, i.e. on what the OUTPUT added (0 disables)")
+    parser.add_argument("--rise-logit", type=float, default=0.0,
+                        help="fallback for a MIXED-label guard: stop only when the score rose "
+                             "this much in logit space vs the prompt-only baseline. Not needed "
+                             "with a --response-only state, where the absolute threshold works.")
     parser.add_argument("--rise", type=float, default=0.0,
                         help="probability-space rise; kept for comparison, does not work "
                              "under saturation (see module docstring)")

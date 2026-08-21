@@ -44,7 +44,10 @@ def _truthy_unsafe(v) -> int:
 # --------------------------------------------------------------------------- #
 # Per-dataset row -> [(text, label)] adapters (schemas verified on HF viewer)  #
 # --------------------------------------------------------------------------- #
-def _toxicchat(row) -> List[Sample]:
+def _toxicchat(row, response_only: bool = False) -> List[Sample]:
+    # Prompt-level only: `toxicity` judges the user's message, not any reply.
+    if response_only:
+        return []
     text = row.get("user_input")
     if not text:
         return []
@@ -54,7 +57,10 @@ def _toxicchat(row) -> List[Sample]:
 _OPENAI_CATS = ("S", "H", "V", "HR", "SH", "S3", "H2", "V2")
 
 
-def _openai_moderation(row) -> List[Sample]:
+def _openai_moderation(row, response_only: bool = False) -> List[Sample]:
+    # Prompt-level only: the category flags describe the prompt itself.
+    if response_only:
+        return []
     text = row.get("prompt")
     if not text:
         return []
@@ -62,9 +68,16 @@ def _openai_moderation(row) -> List[Sample]:
     return [(text, label)]
 
 
-def _aegis(row) -> List[Sample]:
+def _aegis(row, response_only: bool = False) -> List[Sample]:
     # Aegis 1.0/2.0: `text` + up to 5 annotator votes labels_0..labels_4
     # (value "Safe" vs a harm category). Also tolerate a single `prompt_label`.
+    # `text_type` marks what the annotation is about: user_message, llm_response,
+    # combined, multi_turn. Under response_only we keep the ones whose judgement
+    # involves the assistant's reply.
+    if response_only:
+        tt = str(row.get("text_type", "")).strip().lower()
+        if tt not in ("llm_response", "combined"):
+            return []
     text = row.get("text") or row.get("prompt")
     if not text:
         return []
@@ -79,10 +92,12 @@ def _aegis(row) -> List[Sample]:
     return [(text, int(str(lab).strip().lower() in ("unsafe", "harmful", "1", "true")))]
 
 
-def _wildguard(row) -> List[Sample]:
+def _wildguard(row, response_only: bool = False) -> List[Sample]:
+    # Emits up to two samples: the prompt alone (prompt-level) and
+    # prompt+response (response-level). response_only keeps just the latter.
     out: List[Sample] = []
     prompt = (row.get("prompt") or "").strip()
-    if prompt and row.get("prompt_harm_label") is not None:
+    if prompt and not response_only and row.get("prompt_harm_label") is not None:
         out.append((prompt, int(str(row["prompt_harm_label"]).strip().lower() == "harmful")))
     resp = (row.get("response") or "").strip()
     if resp and row.get("response_harm_label") is not None:
@@ -91,7 +106,8 @@ def _wildguard(row) -> List[Sample]:
     return out
 
 
-def _saferlhf(row) -> List[Sample]:
+def _saferlhf(row, response_only: bool = False) -> List[Sample]:
+    # Always response-level: is_response_k_safe judges the reply.
     prompt = (row.get("prompt") or "").strip()
     out: List[Sample] = []
     for k in (0, 1):
@@ -102,7 +118,8 @@ def _saferlhf(row) -> List[Sample]:
     return out
 
 
-def _beavertails(row) -> List[Sample]:
+def _beavertails(row, response_only: bool = False) -> List[Sample]:
+    # Always response-level: is_safe judges the reply given the prompt.
     prompt = (row.get("prompt") or "").strip()
     resp = (row.get("response") or "").strip()
     is_safe = row.get("is_safe")
@@ -117,7 +134,7 @@ class BenchmarkSpec:
     hf_id: str
     config: Optional[str]
     split: str
-    to_samples: Callable[[dict], List[Sample]]
+    to_samples: Callable[..., List[Sample]]
     gated: bool = False
 
 
@@ -145,14 +162,14 @@ class SafetyCorpus:
     meta: Dict = field(default_factory=dict)
 
 
-def _load_one(spec: BenchmarkSpec, cap: int) -> List[Sample]:
+def _load_one(spec: BenchmarkSpec, cap: int, response_only: bool = False) -> List[Sample]:
     """Stream up to `cap` rows from one benchmark and map to (text, label)."""
     from datasets import load_dataset  # local import so `import siren` stays light
 
     ds = load_dataset(spec.hf_id, spec.config, split=spec.split, streaming=True)
     samples: List[Sample] = []
     for row in islice(ds, cap):
-        for text, label in spec.to_samples(row):
+        for text, label in spec.to_samples(row, response_only):
             if isinstance(text, str):
                 t = text.strip()
                 if t:  # drop empty / whitespace-only texts (would 0-length crash)
@@ -167,6 +184,7 @@ def load_safety_benchmarks(
     balance: bool = True,
     seed: int = 42,
     only: Optional[Sequence[str]] = None,
+    response_only: bool = False,
     verbose: bool = True,
 ) -> SafetyCorpus:
     """
@@ -178,6 +196,23 @@ def load_safety_benchmarks(
         val_frac, test_frac: split fractions.
         balance: downsample the majority class to a 1:1 ratio.
         only: restrict to a subset of benchmark names (default: all seven).
+        response_only: keep only samples whose LABEL judges the assistant's
+            reply, dropping prompt-level ones. The text is still the full
+            prompt+response prefix -- this changes the QUESTION the classifier
+            learns to answer, not what it gets to see.
+
+            Why it matters: mixing prompt-level and response-level labels teaches
+            contradictory things about the same prefix ("bomb question" -> 1 from
+            ToxicChat, but "bomb question + refusal" -> 0 from BeaverTails). The
+            blend makes the score track the PROMPT, so a refusal and a compliance
+            to the same harmful prompt become indistinguishable (measured: 0.9999
+            vs 0.9997) -- and that distinction is exactly what an early-stop
+            decision needs. Training on response-level labels only lets a plain
+            absolute threshold separate them.
+
+            Kept: BeaverTails, SafeRLHF, WildGuard (response half), Aegis /
+            Aegis2.0 (llm_response + combined). Dropped: ToxicChat,
+            OpenAIModeration (prompt-level by construction).
         verbose: print per-benchmark load status and label balance.
 
     Resilient: any benchmark that errors (gated/unauthorized/schema change) is
@@ -189,8 +224,14 @@ def load_safety_benchmarks(
 
     for spec in specs:
         try:
-            s = _load_one(spec, cap_per_dataset)
+            s = _load_one(spec, cap_per_dataset, response_only)
             if not s:
+                if response_only:
+                    if verbose:
+                        print(f"  [skip] {spec.name:16s} no response-level samples "
+                              f"(prompt-level dataset)")
+                    per_ds[spec.name] = {"loaded": 0, "note": "no response-level rows"}
+                    continue
                 raise ValueError("no usable rows (schema mismatch?)")
             pos = sum(l for _, l in s)
             per_ds[spec.name] = {"loaded": len(s), "harmful": pos, "safe": len(s) - pos}
@@ -203,6 +244,13 @@ def load_safety_benchmarks(
             if verbose:
                 print(f"  [skip] {spec.name:16s} {type(e).__name__}: {str(e)[:80]}{gate}")
 
+    if not all_samples and response_only:
+        raise RuntimeError(
+            "No response-level samples. Every selected benchmark is prompt-level "
+            "(ToxicChat / OpenAIModeration contribute nothing under response_only). "
+            "Include at least one of BeaverTails, SafeRLHF, WildGuard, Aegis, Aegis2.0 "
+            "-- or drop response_only."
+        )
     if not all_samples:
         raise RuntimeError(
             "No benchmarks could be loaded. On Colab, run "
@@ -242,13 +290,16 @@ def load_safety_benchmarks(
     train_texts, train_y = texts[n_test + n_val:], labels[n_test + n_val:]
 
     meta = {
+        "response_only": response_only,
         "per_dataset": per_ds,
         "loaded_datasets": [k for k, v in per_ds.items() if v.get("loaded", 0) > 0],
         "total_after_balance": n,
         "label_convention": "1=harmful/unsafe, 0=safe",
     }
     if verbose:
-        print(f"\nAggregated corpus: train={len(train_texts)} val={len(val_texts)} test={len(test_texts)} "
-              f"(balanced={balance}); datasets loaded: {meta['loaded_datasets']}")
+        scope = "response-level labels only" if response_only else "prompt+response labels mixed"
+        print(f"\nAggregated corpus [{scope}]: train={len(train_texts)} "
+              f"val={len(val_texts)} test={len(test_texts)} (balanced={balance})")
+        print(f"datasets loaded: {meta['loaded_datasets']}")
 
     return SafetyCorpus(train_texts, train_y, val_texts, val_y, test_texts, test_y, meta)

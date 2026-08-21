@@ -38,6 +38,7 @@ def run_reproduction(
     model_name: str = "Qwen/Qwen3-4B",
     cap_per_dataset: int = 2000,
     only=None,
+    response_only: bool = False,
     probe_train_cap: int = 4000,
     save_state: str = "checkpoints/siren_figure7_state.pt",
     output_fig: str = "exact_figure7_reproduction.png",
@@ -49,7 +50,8 @@ def run_reproduction(
     print("=" * 72)
 
     print("\n1. Loading the seven safety benchmarks ...")
-    corpus = load_safety_benchmarks(cap_per_dataset=cap_per_dataset, only=only, seed=42)
+    corpus = load_safety_benchmarks(cap_per_dataset=cap_per_dataset, only=only,
+                                    response_only=response_only, seed=42)
 
     print("\n2. Extracting mean-pooled features and running the SIREN pipeline ...")
     res = measure_layerwise_f1_presplit(
@@ -90,6 +92,11 @@ if __name__ == "__main__":
                         help="max rows streamed per benchmark")
     parser.add_argument("--only", type=str, default=None,
                         help="comma-separated subset, e.g. 'ToxicChat,BeaverTails'")
+    parser.add_argument("--response-only", action="store_true",
+                        help="train on response-level labels only (drops ToxicChat / "
+                             "OpenAIModeration). Makes the guard answer 'did the assistant "
+                             "produce harmful content', so a plain absolute threshold can "
+                             "tell a refusal apart from a compliance.")
     parser.add_argument("--probe-cap", type=int, default=4000,
                         help="balanced train-row cap for L1 probe fitting (0 = use all)")
     parser.add_argument("--save-state", type=str, default="checkpoints/siren_figure7_state.pt",
@@ -98,5 +105,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     only = [s.strip() for s in args.only.split(",")] if args.only else None
     run_reproduction(args.model, cap_per_dataset=args.cap, only=only,
+                     response_only=args.response_only,
                      probe_train_cap=args.probe_cap, save_state=args.save_state,
                      output_fig=args.output)

@@ -76,7 +76,8 @@ def test_safety_benchmark_aggregation_balances_and_splits(monkeypatch):
         "ToxicChat": [("safe%d" % i, 0) for i in range(80)] + [("bad%d" % i, 1) for i in range(20)],
         "BeaverTails": [("ok%d" % i, 0) for i in range(10)] + [("harm%d" % i, 1) for i in range(60)],
     }
-    monkeypatch.setattr(sb, "_load_one", lambda spec, cap: fake.get(spec.name, []))
+    monkeypatch.setattr(sb, "_load_one",
+                        lambda spec, cap, response_only=False: fake.get(spec.name, []))
     corpus = sb.load_safety_benchmarks(
         cap_per_dataset=100, only=["ToxicChat", "BeaverTails"], seed=1, verbose=False)
     import numpy as np
@@ -86,3 +87,35 @@ def test_safety_benchmark_aggregation_balances_and_splits(monkeypatch):
     # disjoint, non-empty splits
     assert len(corpus.train_texts) > 0 and len(corpus.val_texts) > 0 and len(corpus.test_texts) > 0
     assert set(corpus.meta["loaded_datasets"]) == {"ToxicChat", "BeaverTails"}
+
+
+def test_response_only_filters_prompt_level_datasets():
+    """response_only must keep response-judgement rows and drop prompt-level ones."""
+    from siren.safety_benchmarks import (
+        _toxicchat, _openai_moderation, _aegis, _wildguard, _saferlhf, _beavertails)
+
+    # Prompt-level datasets contribute nothing.
+    assert _toxicchat({"user_input": "x", "toxicity": 1}, response_only=True) == []
+    assert _openai_moderation({"prompt": "x", "H": 1}, response_only=True) == []
+    # ...but still work in the default mixed mode.
+    assert _toxicchat({"user_input": "x", "toxicity": 1}) == [("x", 1)]
+
+    # WildGuard: drop the prompt-only sample, keep prompt+response.
+    row = {"prompt": "p", "response": "r",
+           "prompt_harm_label": "harmful", "response_harm_label": "unharmful"}
+    assert _wildguard(row) == [("p", 1), ("p\nr", 0)]
+    assert _wildguard(row, response_only=True) == [("p\nr", 0)]
+
+    # Aegis: keep llm_response / combined, drop user_message.
+    base = {"text": "t", "labels_0": "Safe", "labels_1": "Safe"}
+    assert _aegis({**base, "text_type": "user_message"}, response_only=True) == []
+    assert _aegis({**base, "text_type": "llm_response"}, response_only=True) == [("t", 0)]
+    assert _aegis({**base, "text_type": "combined"}, response_only=True) == [("t", 0)]
+
+    # Always-response-level datasets are unaffected, and the text still carries
+    # the full prompt+response prefix (response_only changes labels, not scope).
+    sr = _saferlhf({"prompt": "q", "response_0": "a", "is_response_0_safe": True},
+                   response_only=True)
+    assert sr == [("q\na", 0)]
+    bt = _beavertails({"prompt": "u", "response": "v", "is_safe": False}, response_only=True)
+    assert bt == [("u\nv", 1)]
