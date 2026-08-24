@@ -119,3 +119,22 @@ def test_response_only_filters_prompt_level_datasets():
     assert sr == [("q\na", 0)]
     bt = _beavertails({"prompt": "u", "response": "v", "is_safe": False}, response_only=True)
     assert bt == [("u\nv", 1)]
+
+
+def test_paired_response_adapters_keep_prompt_response_boundary():
+    """Analyses need the boundary that the training corpus builders collapse."""
+    from siren.safety_benchmarks import (
+        _paired_beavertails, _paired_saferlhf, _paired_wildguard)
+
+    bt = _paired_beavertails({"prompt": "p", "response": "r", "is_safe": False})
+    assert len(bt) == 1 and bt[0].prompt == "p" and bt[0].response == "r" and bt[0].label == 1
+
+    sr = _paired_saferlhf({"prompt": "q", "response_0": "a", "is_response_0_safe": True,
+                           "response_1": "b", "is_response_1_safe": False})
+    assert [(s.response, s.label) for s in sr] == [("a", 0), ("b", 1)]
+
+    wg = _paired_wildguard({"prompt": "p", "response": "r", "response_harm_label": "harmful"})
+    assert wg[0].label == 1
+    # Missing pieces yield nothing rather than a malformed pair.
+    assert _paired_beavertails({"prompt": "p", "response": "", "is_safe": False}) == []
+    assert _paired_wildguard({"prompt": "p", "response": "r"}) == []

@@ -303,3 +303,81 @@ def load_safety_benchmarks(
         print(f"datasets loaded: {meta['loaded_datasets']}")
 
     return SafetyCorpus(train_texts, train_y, val_texts, val_y, test_texts, test_y, meta)
+
+
+# --------------------------------------------------------------------------- #
+# Paired (prompt, response) access                                             #
+# --------------------------------------------------------------------------- #
+# The corpus builders above concatenate prompt and response into one string,
+# which is what training needs. Some analyses instead need the boundary: e.g.
+# "score the prompt alone, then watch the score evolve across the response".
+# Only datasets that genuinely separate the two are supported here.
+
+@dataclass
+class PairedSample:
+    prompt: str
+    response: str
+    label: int          # response-level: 1 = harmful reply, 0 = safe reply
+    source: str
+
+
+def _paired_beavertails(row) -> List["PairedSample"]:
+    p, r, safe = (row.get("prompt") or "").strip(), (row.get("response") or "").strip(), row.get("is_safe")
+    if not (p and r) or safe is None:
+        return []
+    return [PairedSample(p, r, int(not bool(safe)), "BeaverTails")]
+
+
+def _paired_saferlhf(row) -> List["PairedSample"]:
+    p = (row.get("prompt") or "").strip()
+    out = []
+    for k in (0, 1):
+        r, safe = row.get(f"response_{k}"), row.get(f"is_response_{k}_safe")
+        if p and r and safe is not None:
+            out.append(PairedSample(p, str(r).strip(), int(not bool(safe)), "SafeRLHF"))
+    return out
+
+
+def _paired_wildguard(row) -> List["PairedSample"]:
+    p, r = (row.get("prompt") or "").strip(), (row.get("response") or "").strip()
+    lab = row.get("response_harm_label")
+    if not (p and r) or lab is None:
+        return []
+    return [PairedSample(p, r, int(str(lab).strip().lower() == "harmful"), "WildGuard")]
+
+
+PAIRED_SOURCES = [
+    ("BeaverTails", "PKU-Alignment/BeaverTails", "default", "30k_test", _paired_beavertails),
+    ("SafeRLHF", "PKU-Alignment/PKU-SafeRLHF", "default", "test", _paired_saferlhf),
+    ("WildGuard", "allenai/wildguardmix", "wildguardtest", "test", _paired_wildguard),
+]
+
+
+def load_paired_response_samples(
+    cap_per_dataset: int = 1000,
+    only: Optional[Sequence[str]] = None,
+    verbose: bool = True,
+) -> List["PairedSample"]:
+    """
+    Load (prompt, response, response-level label) triples from the datasets that
+    keep the two apart. Uses the TEST splits, so these are held out from the
+    corpora that train/validate the guards.
+    """
+    from datasets import load_dataset
+
+    picked = [s for s in PAIRED_SOURCES if only is None or s[0] in set(only)]
+    out: List[PairedSample] = []
+    for name, hf_id, config, split, adapter in picked:
+        try:
+            ds = load_dataset(hf_id, config, split=split, streaming=True)
+            got = []
+            for row in islice(ds, cap_per_dataset):
+                got.extend(adapter(row))
+            out.extend(got)
+            if verbose:
+                pos = sum(s.label for s in got)
+                print(f"  [ok]   {name:14s} {len(got):5d} pairs  (harmful reply={pos})")
+        except Exception as e:
+            if verbose:
+                print(f"  [skip] {name:14s} {type(e).__name__}: {str(e)[:70]}")
+    return out
