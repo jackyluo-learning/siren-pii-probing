@@ -84,3 +84,28 @@ def test_balanced_subsample_keeps_every_class():
     ys = np.concatenate([np.zeros(500), np.ones(30), np.full(500, 2)]).astype(int)
     cs = np.bincount(ys[_balanced_subsample(ys, cap=600)], minlength=3)
     assert cs.tolist() == [200, 30, 200], cs
+
+
+def test_track_emits_flushed_lines_when_stdout_is_not_a_terminal():
+    """Colab pipes `!python` output; tqdm's \\r frames vanish, so we need lines."""
+    import io
+    from siren.progress import track
+
+    buf = io.StringIO()                       # StringIO.isatty() is False
+    assert list(track(range(50), "阶段", unit="步", stream=buf)) == list(range(50))
+    lines = [l for l in buf.getvalue().splitlines() if l.strip()]
+
+    assert len(lines) > 3, "非终端时必须有多行进度，否则看起来像卡死"
+    assert len(lines) <= 25, f"行数应被节流，实际 {len(lines)}"
+    assert lines[0].startswith("阶段: 开始")
+    assert "50/50 (100%)" in lines[-1] and "完成" in lines[-1]
+    assert "\r" not in buf.getvalue(), "回车重画会被 Colab 吞掉"
+
+
+def test_track_handles_unsized_iterables():
+    import io
+    from siren.progress import track
+
+    buf = io.StringIO()
+    assert list(track((x for x in range(5)), "生成器", stream=buf)) == list(range(5))
+    assert buf.getvalue().strip(), "无 total 时也要有输出"

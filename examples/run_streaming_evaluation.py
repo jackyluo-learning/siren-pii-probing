@@ -36,6 +36,8 @@ import warnings
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
+
+from siren.progress import track
 import torch
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
@@ -95,14 +97,10 @@ def score_texts(
     show_progress: bool = True,
 ) -> List[np.ndarray]:
     """Per-token harmfulness scores for each text (one forward pass per text)."""
-    try:
-        from tqdm.auto import tqdm
-    except Exception:
-        def tqdm(x, **k):
-            return x
 
     out: List[np.ndarray] = []
-    for text in tqdm(list(texts), desc="streaming", unit="seq", disable=not show_progress):
+    seqs = list(texts)
+    for text in (track(seqs, desc="streaming", unit="条") if show_progress else seqs):
         enc = tokenizer(text, return_tensors="pt", truncation=True, max_length=max_length)
         ids = enc["input_ids"]
         if ids.shape[-1] == 0:

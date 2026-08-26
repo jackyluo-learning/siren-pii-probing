@@ -34,6 +34,7 @@ from siren import (
     SirenMLPHead,
     SirenTrainer,
 )
+from siren.progress import track
 from siren.probe import PAPER_C_GRID
 
 
@@ -69,16 +70,11 @@ def pool_texts(
     Mean-pool residual-stream activations for each text (paper Eq. 2), in batches
     with a progress bar. Order is preserved so features stay aligned with labels.
     """
-    try:
-        from tqdm.auto import tqdm
-    except Exception:  # tqdm missing -> no-op
-        def tqdm(x, **k):
-            return x
 
     per_layer: Dict[int, List[np.ndarray]] = {l: [] for l in range(1, num_layers + 1)}
     texts = list(texts)
     starts = range(0, len(texts), batch_size)
-    for start in tqdm(starts, desc="pooling", unit="batch", disable=not show_progress):
+    for start in (track(starts, desc="pooling", unit="批") if show_progress else starts):
         batch = texts[start:start + batch_size]
         enc = tokenizer(batch, return_tensors="pt", padding=True,
                         truncation=True, max_length=max_length)
@@ -138,11 +134,6 @@ def _run_siren_on_splits(
     device: str = "cpu",
 ) -> Dict[str, object]:
     """Core paper-aligned pipeline on already-split, mean-pooled features."""
-    try:
-        from tqdm.auto import tqdm
-    except Exception:
-        def tqdm(x, **k):
-            return x
 
     # L1 coordinate descent scales with n_samples; a class-balanced subsample of
     # the train split keeps probe fitting to minutes on CPU without changing the
@@ -161,7 +152,7 @@ def _run_siren_on_splits(
     safety_neurons: Dict[int, List[int]] = {}
     val_f1: Dict[int, float] = {}
     test_f1: Dict[int, float] = {}
-    for l in tqdm(range(1, num_layers + 1), desc="probes", unit="layer"):
+    for l in track(list(range(1, num_layers + 1)), desc="逐层探针", unit="层"):
         neurons, vf1 = probe.fit_layer(l, tr_fit[l], y_fit, va[l], y_va)
         safety_neurons[l] = neurons
         val_f1[l] = vf1

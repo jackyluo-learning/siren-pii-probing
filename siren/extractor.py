@@ -7,7 +7,7 @@ and compute sequence-level or prefix-level mean-pooled representations.
 from typing import Dict, List, Optional, Union, Tuple
 import torch
 import torch.nn as nn
-from tqdm import tqdm
+from tqdm import tqdm  # only used where stdout is a terminal
 
 
 class InternalStateExtractor:

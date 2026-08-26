@@ -34,6 +34,7 @@ from sklearn.metrics import f1_score, confusion_matrix, classification_report
 from siren import (AdaptiveNeuronAggregator, SafetyNeuronProbe,
                    SirenMLPHead, SirenTrainer)
 from siren.probe import PAPER_C_GRID
+from siren.progress import track
 from siren.pii_benchmark import (build_pii_binary_task, build_pii_multiclass_task,
                                  build_pii_presence_task,
                                  build_pii_presence_merged_task, lexical_baseline,
@@ -55,14 +56,9 @@ def _fit_probe(tag: str, tr, y, va, y_va, layers, eta, reshuffle_each_layer: boo
     enough to park an entire "chance" band near 0.60. Drawing a fresh permutation
     per layer makes the points independent, so the band centres on chance.
     """
-    try:
-        from tqdm.auto import tqdm
-    except Exception:
-        def tqdm(x, **k):
-            return x
     probe = SafetyNeuronProbe(eta=eta, c_grid=PAPER_C_GRID, average="macro")
     neurons, val_f1 = {}, {}
-    for i, l in enumerate(tqdm(layers, desc=tag, unit="layer")):
+    for i, l in enumerate(track(layers, desc=tag, unit="层")):
         y_l = y
         if reshuffle_each_layer:
             y_l = y.copy()
@@ -100,7 +96,7 @@ def run_task(task: PIITask, model_name: str, eta: float = 0.8,
               f"{len(layers)*4*task.n_classes} 次 L1 拟合）", flush=True)
     print("逐层 L1 探针（C 网格在验证集上选，Macro-F1）...", flush=True)
     probe, safety_neurons, val_f1 = _fit_probe(
-        "probes", tr_fit, y_fit, va, task.y_val, layers, eta)
+        "逐层 L1 探针", tr_fit, y_fit, va, task.y_val, layers, eta)
     test_f1 = {l: float(f1_score(task.y_test, probe.layer_probes[l].predict(te[l]),
                                  average="macro", zero_division=0)) for l in layers}
     for l in layers:
@@ -122,7 +118,7 @@ def run_task(task: PIITask, model_name: str, eta: float = 0.8,
     # Same workload as the main probe — it used to run silently, which reads as
     # a hang. Progress bar and the same subsample apply here too.
     print("打乱标签对照探针（与上一步同等工作量，每层独立打乱）...", flush=True)
-    ctrl, _, _ = _fit_probe("control", tr_fit, y_fit, va, task.y_val, layers, eta,
+    ctrl, _, _ = _fit_probe("打乱标签对照探针", tr_fit, y_fit, va, task.y_val, layers, eta,
                             reshuffle_each_layer=True)
     ctrl_f1 = {l: float(f1_score(task.y_test, ctrl.layer_probes[l].predict(te[l]),
                                  average="macro", zero_division=0)) for l in layers}
