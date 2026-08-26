@@ -191,6 +191,7 @@ def build_pii_presence_merged_task(
     sources: Optional[Sequence[str]] = None,
     word_band: Tuple[int, int] = (13, 40),
     holdout_source: Optional[str] = None,
+    val_source: Optional[str] = None,
     language: Optional[str] = "en",
     val_frac: float = 0.15,
     test_frac: float = 0.15,
@@ -212,12 +213,15 @@ def build_pii_presence_merged_task(
     here is available without understanding PII at all. Always report the score
     beside `lexical_baseline(task)`.
 
-    `holdout_source` keeps one negative corpus out of train and val and uses it
-    as the only source of test negatives, which asks whether a model learned "no
-    identifier" or just "not those particular corpora". Leave-one-out with TF-IDF
-    lands at 0.85-0.98, so generalisation across clean corpora is real; it is the
-    thin margin over the lexical floor, not corpus memorisation, that limits what
-    this task can show.
+    `holdout_source` supplies every test negative and appears nowhere in
+    training, which asks whether a model learned "no identifier" or just "not
+    those particular corpora". `val_source` is a second corpus reserved for
+    validation, defaulting to the first remaining source. Both are needed: with
+    validation negatives drawn from the training corpora, every layer scored
+    0.993-0.999 on val against 0.65-0.87 on test, so C was selected from
+    fourth-decimal noise and the alpha_l weights behind SIREN's aggregation went
+    uniform. Validating on its own unseen corpus restores the signal without
+    tuning on the test corpus.
     """
     from .clean_corpora import load_clean_negatives, normalise
 
@@ -238,16 +242,36 @@ def build_pii_presence_merged_task(
                 [items[i] for i in idx[:n_te]])
 
     if holdout_source:
-        known = {s for s, _ in labelled}
+        known = sorted({s for s, _ in labelled})
         if holdout_source not in known:
-            raise ValueError(f"holdout_source={holdout_source!r} 不在负样本来源 {sorted(known)} 中。")
-        fit_neg = [t for s, t in labelled if s != holdout_source]
-        held_neg = [t for s, t in labelled if s == holdout_source]
-        rng.shuffle(fit_neg); rng.shuffle(held_neg)
-        # Train/val negatives come from the other corpora; every test negative is
-        # from the held-out one, so the test split is genuinely unseen in style.
-        n_va = int(val_frac / (1 - test_frac) * len(fit_neg))
-        neg_tr, neg_va, neg_te = fit_neg[n_va:], fit_neg[:n_va], held_neg
+            raise ValueError(f"holdout_source={holdout_source!r} 不在负样本来源 {known} 中。")
+
+        # A second corpus is held out for validation. With validation negatives
+        # drawn from the training corpora, every layer scored 0.993-0.999 on val
+        # while testing at 0.65-0.87: model selection then had nothing to
+        # discriminate on, C was picked from fourth-decimal noise, and the alpha_l
+        # weights that drive SIREN's cross-layer aggregation collapsed to uniform.
+        # Validating on its own unseen corpus makes val representative of test
+        # without tuning on the test corpus itself.
+        if val_source is None:
+            others = [s for s in known if s != holdout_source]
+            if len(others) < 2:
+                raise ValueError(
+                    f"留出 {holdout_source!r} 后只剩 {others}，不足以再留一个做验证。"
+                    "至少需要 3 个负样本来源。")
+            val_source = others[0]
+        if val_source == holdout_source:
+            raise ValueError("val_source 不能与 holdout_source 相同，否则 C 会调到测试语料上。")
+        if val_source not in known:
+            raise ValueError(f"val_source={val_source!r} 不在负样本来源 {known} 中。")
+
+        neg_tr = [t for s, t in labelled if s not in (holdout_source, val_source)]
+        neg_va = [t for s, t in labelled if s == val_source]
+        neg_te = [t for s, t in labelled if s == holdout_source]
+        for name, block in (("训练", neg_tr), ("验证", neg_va), ("测试", neg_te)):
+            if not block:
+                raise ValueError(f"{name}集没有负样本，检查 sources / per_source。")
+        rng.shuffle(neg_tr); rng.shuffle(neg_va); rng.shuffle(neg_te)
     else:
         neg_tr, neg_va, neg_te = split_block([t for _, t in labelled], val_frac, test_frac)
 
@@ -268,7 +292,9 @@ def build_pii_presence_merged_task(
         srcs = sorted({s for s, _ in labelled})
         print(f"二分类任务「是否含 PII」：正样本来自 ai4privacy，负样本来自 {srcs}")
         if holdout_source:
-            print(f"  留出语料: 测试集的负样本【全部】来自未参与训练的 {holdout_source}")
+            print(f"  留出语料: 训练负样本={[s for s in srcs if s not in (holdout_source, val_source)]}"
+                  f" | 验证负样本={val_source} | 测试负样本={holdout_source}")
+            print(f"  验证与测试各用一个未见语料，C 与 alpha_l 才有区分度，且不会调到测试语料上")
         print(f"  ⚠️ 跨语料任务的 TF-IDF 词袋下限实测 0.981（同源任务仅 0.755），"
               f"请把探针分数与词袋基线并列解读")
 
@@ -277,6 +303,7 @@ def build_pii_presence_merged_task(
                    meta={"task": "presence_merged", "word_band": list(word_band),
                          "negative_sources": sorted({s for s, _ in labelled}),
                          "holdout_source": holdout_source,
+                         "val_source": val_source,
                          "n_train": len(trX), "n_val": len(vaX), "n_test": len(teX),
                          "caveat": "negatives come from other corpora; "
                                    "read the score against lexical_baseline()"})

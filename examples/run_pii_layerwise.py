@@ -229,6 +229,8 @@ def main():
                     help="presence-merged: 每个干净语料取多少条负样本")
     ap.add_argument("--holdout-source", default=None,
                     help="presence-merged: 把该语料完全排除出训练，测试集负样本全取自它")
+    ap.add_argument("--val-source", default=None,
+                    help="presence-merged: 验证集负样本专用的未见语料（默认自动选一个）")
     ap.add_argument("--out-prefix", default="pii")
     args = ap.parse_args()
 
@@ -243,7 +245,8 @@ def main():
 
     if args.task == "presence-merged":
         task = build_pii_presence_merged_task(
-            cap=args.cap, per_source=args.per_source, holdout_source=args.holdout_source)
+            cap=args.cap, per_source=args.per_source,
+            holdout_source=args.holdout_source, val_source=args.val_source)
         held = f", holdout={args.holdout_source}" if args.holdout_source else ""
         title = f"PII binary: contains PII?  (negatives from other corpora{held})"
         tag = f"{args.out_prefix}_presence_merged" + (
