@@ -54,6 +54,20 @@ SUGGESTED_MULTICLASS = ["EMAIL", "SSN", "CREDITCARDNUMBER", "IPV4",
                         "PHONENUMBER", "IBAN"]
 
 
+# Labels that on their own (or nearly so) pin a message to one person or one
+# account -- the things a PII guard actually blocks on. Everything else in
+# KNOWN_LABELS is a quasi-identifier: a job title, a city, a date, a bare first
+# name. Those are still personal data, but no deployed filter refuses a sentence
+# for containing them, and treating them as positives would make the task
+# unanswerable rather than hard.
+DIRECT_IDENTIFIERS = {
+    "SSN", "CREDITCARDNUMBER", "CREDITCARDCVV", "IBAN", "ACCOUNTNUMBER",
+    "PASSWORD", "PIN", "BITCOINADDRESS", "ETHEREUMADDRESS", "LITECOINADDRESS",
+    "VEHICLEVIN", "VEHICLEVRM", "PHONEIMEI", "MAC", "IPV4", "IPV6", "EMAIL",
+    "PHONENUMBER", "USERNAME", "DOB", "NEARBYGPSCOORDINATE", "MASKEDNUMBER",
+}
+
+
 @dataclass
 class PIITask:
     """A ready-to-probe split, with the label vocabulary kept alongside."""
@@ -142,6 +156,85 @@ def _split(texts: List[str], y: np.ndarray, val_frac: float, test_frac: float,
     pick = lambda ii: ([texts[i] for i in ii], y[ii])
     (trX, trY), (vaX, vaY), (teX, teY) = pick(tr), pick(va), pick(te)
     return trX, trY, vaX, vaY, teX, teY
+
+
+def build_pii_presence_task(
+    direct_labels: Optional[Set[str]] = None,
+    cap: int = 8000,
+    language: Optional[str] = "en",
+    val_frac: float = 0.15,
+    test_frac: float = 0.15,
+    seed: int = 42,
+    verbose: bool = True,
+) -> PIITask:
+    """
+    "Does this text carry a direct identifier?"
+
+    This is the binary framing a PII guard actually faces, and it is deliberately
+    NOT called "contains PII vs contains none". Every row of this corpus carries
+    some personal data -- measured over 3000 rows, exactly zero have an empty
+    privacy_mask -- because it exists to train masking models. There is no
+    PII-free text here to use as negatives.
+
+    Two ways to manufacture PII-free negatives were rejected. Deleting the marked
+    spans from source_text leaves "Dear , as per our records, your license  is
+    still registered", so the probe can separate the classes on broken syntax
+    alone; target_text replaces each span with a literal "[FIRSTNAME]" marker,
+    which is an even plainer cue. Both rebuild the template shortcut this module
+    exists to avoid.
+
+    So both sides here are unmodified source_text from the same generator, split
+    on which *kind* of personal data is present:
+
+      positive: carries at least one direct identifier (SSN, card number, IBAN,
+                password, email, IP, ...)
+      negative: carries only quasi-identifiers (first name, job title, city,
+                date, ...) and no direct identifier
+
+    A probe cannot win this on sentence shape or topic; it has to tell an account
+    number from a job title. Report it with that wording, not as PII detection in
+    the "any personal data at all" sense.
+    """
+    direct = {s.strip().upper() for s in (direct_labels or DIRECT_IDENTIFIERS)}
+    unknown = direct - KNOWN_LABELS
+    if unknown:
+        print(f"⚠️  这些标签不在已知词表里，可能永远匹配不到：{sorted(unknown)}")
+
+    pos, neg, trig = [], [], Counter()
+    for text, labels in _rows(cap, language, verbose):
+        hit = labels & direct
+        if hit:
+            pos.append(text)
+            trig.update(hit)
+        else:
+            neg.append(text)
+
+    if not pos or not neg:
+        raise ValueError(
+            f"无法构建二分任务：正 {len(pos)} 条 / 负 {len(neg)} 条。"
+            "扩大 cap，或调整 direct_labels 使两侧都有样本。")
+
+    rng = np.random.RandomState(seed)
+    k = min(len(pos), len(neg))
+    rng.shuffle(pos)
+    rng.shuffle(neg)
+    texts = pos[:k] + neg[:k]
+    y = np.array([1] * k + [0] * k, dtype=np.int64)
+
+    if verbose:
+        print(f"二分类任务「是否含直接标识符」：正 {k} / 负 {k}"
+              f"（扫描到 正 {len(pos)} / 负 {len(neg)}，已平衡到较少的一侧）")
+        print(f"  负样本并非无 PII 文本，而是只含准标识属性（姓名/职位/城市/日期等）")
+        print(f"  正样本触发类别 Top8: {[f'{a}×{b}' for a, b in trig.most_common(8)]}")
+
+    trX, trY, vaX, vaY, teX, teY = _split(texts, y, val_frac, test_frac, seed)
+    return PIITask(trX, trY, vaX, vaY, teX, teY,
+                   class_names=["quasi-identifiers only", "direct identifier"],
+                   meta={"task": "presence", "per_class": k,
+                         "n_pos_seen": len(pos), "n_neg_seen": len(neg),
+                         "trigger_counts": dict(trig.most_common()),
+                         "direct_labels": sorted(direct),
+                         "negatives": "same corpus, quasi-identifiers only"})
 
 
 def build_pii_binary_task(

@@ -35,6 +35,7 @@ from siren import (AdaptiveNeuronAggregator, SafetyNeuronProbe,
                    SirenMLPHead, SirenTrainer)
 from siren.probe import PAPER_C_GRID
 from siren.pii_benchmark import (build_pii_binary_task, build_pii_multiclass_task,
+                                 build_pii_presence_task,
                                  survey_categories, PIITask)
 from run_real_layerwise_experiment import (load_model_and_extractor, pool_texts,
                                            _balanced_subsample)
@@ -209,7 +210,8 @@ def plot_confusion(res: Dict, out: str):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--task", choices=["survey", "binary", "multiclass"], default="multiclass")
+    ap.add_argument("--task", choices=["survey", "presence", "binary", "multiclass"],
+                    default="multiclass")
     ap.add_argument("--model", default="Qwen/Qwen3-4B")
     ap.add_argument("--target", default="SSN", help="binary 模式的目标类别（注意是 SSN 不是 SOCIALNUM）")
     ap.add_argument("--categories", default=None, help="multiclass 模式的类别，逗号分隔")
@@ -232,7 +234,13 @@ def main():
         survey_categories(cap=args.cap, top=30)
         return
 
-    if args.task == "binary":
+    if args.task == "presence":
+        # Negatives are NOT PII-free text -- this corpus has none. They carry only
+        # quasi-identifiers, so the title says so rather than claiming "has PII?".
+        task = build_pii_presence_task(cap=args.cap)
+        title = "PII binary: direct identifier?  (negatives carry quasi-identifiers only)"
+        tag = f"{args.out_prefix}_presence"
+    elif args.task == "binary":
         task = build_pii_binary_task(target=args.target, cap=args.cap)
         title = f"PII binary: contains {args.target}?  (negatives carry other PII)"
         tag = f"{args.out_prefix}_binary_{args.target.lower()}"
