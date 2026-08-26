@@ -158,6 +158,130 @@ def _split(texts: List[str], y: np.ndarray, val_frac: float, test_frac: float,
     return trX, trY, vaX, vaY, teX, teY
 
 
+def lexical_baseline(task: "PIITask", verbose: bool = True) -> float:
+    """
+    Macro-F1 of a TF-IDF bag-of-words classifier on the same split.
+
+    This is the floor any representation-level result has to clear to mean
+    anything. A model with no notion of what an identifier is scores this purely
+    on surface vocabulary, so a probe that merely matches it has demonstrated
+    nothing about the representation. Measured floors: 0.755 for the same-corpus
+    "direct identifier?" task, 0.783 for "contains SSN?", and 0.981 once the
+    negatives come from other corpora -- which is why the merged task's headroom
+    is thin and its score must always be reported next to this number.
+    """
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import f1_score
+
+    vec = TfidfVectorizer(max_features=20000, ngram_range=(1, 2))
+    Xtr = vec.fit_transform(task.train_texts)
+    clf = LogisticRegression(max_iter=2000)
+    clf.fit(Xtr, task.y_train)
+    f1 = float(f1_score(task.y_test, clf.predict(vec.transform(task.test_texts)),
+                        average="macro", zero_division=0))
+    if verbose:
+        print(f"  TF-IDF 词袋基线（表面词汇下限）: Macro-F1 = {f1:.4f}")
+    return f1
+
+
+def build_pii_presence_merged_task(
+    cap: int = 6000,
+    per_source: int = 1500,
+    sources: Optional[Sequence[str]] = None,
+    word_band: Tuple[int, int] = (13, 40),
+    holdout_source: Optional[str] = None,
+    language: Optional[str] = "en",
+    val_frac: float = 0.15,
+    test_frac: float = 0.15,
+    seed: int = 42,
+    verbose: bool = True,
+) -> PIITask:
+    """
+    "Does this text contain PII at all?", with negatives imported from other corpora.
+
+    Positives are ai4privacy rows carrying any PII; negatives are PII-free text
+    pooled from several public corpora (see siren.clean_corpora). Both sides are
+    restricted to the same word-count band so length cannot stand in for the
+    label.
+
+    The honest caveat, measured rather than assumed: a TF-IDF bag-of-words model
+    reaches Macro-F1 0.981 on this task, against 0.755 on the same-corpus "direct
+    identifier?" task. The two corpora differ in vocabulary and register, not
+    only in whether an identifier is present, so almost all of the separability
+    here is available without understanding PII at all. Always report the score
+    beside `lexical_baseline(task)`.
+
+    `holdout_source` keeps one negative corpus out of train and val and uses it
+    as the only source of test negatives, which asks whether a model learned "no
+    identifier" or just "not those particular corpora". Leave-one-out with TF-IDF
+    lands at 0.85-0.98, so generalisation across clean corpora is real; it is the
+    thin margin over the lexical floor, not corpus memorisation, that limits what
+    this task can show.
+    """
+    from .clean_corpora import load_clean_negatives, normalise
+
+    lo, hi = word_band
+    pos = [t for t in (normalise(x) for x, _ in _rows(cap, language, verbose))
+           if lo <= len(t.split()) <= hi]
+    if not pos:
+        raise ValueError(f"词数带 {word_band} 内没有正样本，放宽 word_band 或加大 cap。")
+
+    labelled = load_clean_negatives(sources, per_source, word_band, verbose)
+    rng = np.random.RandomState(seed)
+
+    def split_block(items, val_f, test_f):
+        idx = np.arange(len(items)); rng.shuffle(idx)
+        n_te, n_va = int(test_f * len(idx)), int(val_f * len(idx))
+        return ([items[i] for i in idx[n_te + n_va:]],
+                [items[i] for i in idx[n_te:n_te + n_va]],
+                [items[i] for i in idx[:n_te]])
+
+    if holdout_source:
+        known = {s for s, _ in labelled}
+        if holdout_source not in known:
+            raise ValueError(f"holdout_source={holdout_source!r} 不在负样本来源 {sorted(known)} 中。")
+        fit_neg = [t for s, t in labelled if s != holdout_source]
+        held_neg = [t for s, t in labelled if s == holdout_source]
+        rng.shuffle(fit_neg); rng.shuffle(held_neg)
+        # Train/val negatives come from the other corpora; every test negative is
+        # from the held-out one, so the test split is genuinely unseen in style.
+        n_va = int(val_frac / (1 - test_frac) * len(fit_neg))
+        neg_tr, neg_va, neg_te = fit_neg[n_va:], fit_neg[:n_va], held_neg
+    else:
+        neg_tr, neg_va, neg_te = split_block([t for _, t in labelled], val_frac, test_frac)
+
+    pos_tr, pos_va, pos_te = split_block(pos, val_frac, test_frac)
+
+    def pair(p, n):
+        k = min(len(p), len(n))
+        return p[:k] + n[:k], np.array([1] * k + [0] * k, dtype=np.int64)
+
+    trX, trY = pair(pos_tr, neg_tr)
+    vaX, vaY = pair(pos_va, neg_va)
+    teX, teY = pair(pos_te, neg_te)
+    if min(len(trX), len(vaX), len(teX)) == 0:
+        raise ValueError(f"某个划分为空：train {len(trX)} / val {len(vaX)} / test {len(teX)}。"
+                         "加大 cap 或 per_source。")
+
+    if verbose:
+        srcs = sorted({s for s, _ in labelled})
+        print(f"二分类任务「是否含 PII」：正样本来自 ai4privacy，负样本来自 {srcs}")
+        if holdout_source:
+            print(f"  留出语料: 测试集的负样本【全部】来自未参与训练的 {holdout_source}")
+        print(f"  ⚠️ 跨语料任务的 TF-IDF 词袋下限实测 0.981（同源任务仅 0.755），"
+              f"请把探针分数与词袋基线并列解读")
+
+    return PIITask(trX, trY, vaX, vaY, teX, teY,
+                   class_names=["no PII", "contains PII"],
+                   meta={"task": "presence_merged", "word_band": list(word_band),
+                         "negative_sources": sorted({s for s, _ in labelled}),
+                         "holdout_source": holdout_source,
+                         "n_train": len(trX), "n_val": len(vaX), "n_test": len(teX),
+                         "caveat": "negatives come from other corpora; "
+                                   "read the score against lexical_baseline()"})
+
+
 def build_pii_presence_task(
     direct_labels: Optional[Set[str]] = None,
     cap: int = 8000,

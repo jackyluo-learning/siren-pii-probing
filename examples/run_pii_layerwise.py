@@ -36,6 +36,7 @@ from siren import (AdaptiveNeuronAggregator, SafetyNeuronProbe,
 from siren.probe import PAPER_C_GRID
 from siren.pii_benchmark import (build_pii_binary_task, build_pii_multiclass_task,
                                  build_pii_presence_task,
+                                 build_pii_presence_merged_task, lexical_baseline,
                                  survey_categories, PIITask)
 from run_real_layerwise_experiment import (load_model_and_extractor, pool_texts,
                                            _balanced_subsample)
@@ -210,18 +211,24 @@ def plot_confusion(res: Dict, out: str):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--task", choices=["survey", "presence", "binary", "multiclass"],
+    ap.add_argument("--task", choices=["survey", "presence", "presence-merged",
+                                       "binary", "multiclass"],
                     default="multiclass")
     ap.add_argument("--model", default="Qwen/Qwen3-4B")
     ap.add_argument("--target", default="SSN", help="binary 模式的目标类别（注意是 SSN 不是 SOCIALNUM）")
     ap.add_argument("--categories", default=None, help="multiclass 模式的类别，逗号分隔")
     ap.add_argument("--n-categories", type=int, default=6)
-    ap.add_argument("--cap", type=int, default=12000, help="流式扫描的原始行数上限")
+    ap.add_argument("--cap", type=int, default=12000,
+                    help="从 ai4privacy 取多少条【可用】文本（已过语言过滤且含 PII），不是扫描行数")
     ap.add_argument("--min-per-class", type=int, default=60)
     ap.add_argument("--max-length", type=int, default=128)
     ap.add_argument("--epochs", type=int, default=20)
     ap.add_argument("--probe-cap", type=int, default=4000,
                     help="探针拟合的类别均衡样本上限（0 = 用全部；L1 成本随样本数线性增长）")
+    ap.add_argument("--per-source", type=int, default=1500,
+                    help="presence-merged: 每个干净语料取多少条负样本")
+    ap.add_argument("--holdout-source", default=None,
+                    help="presence-merged: 把该语料完全排除出训练，测试集负样本全取自它")
     ap.add_argument("--out-prefix", default="pii")
     args = ap.parse_args()
 
@@ -234,7 +241,14 @@ def main():
         survey_categories(cap=args.cap, top=30)
         return
 
-    if args.task == "presence":
+    if args.task == "presence-merged":
+        task = build_pii_presence_merged_task(
+            cap=args.cap, per_source=args.per_source, holdout_source=args.holdout_source)
+        held = f", holdout={args.holdout_source}" if args.holdout_source else ""
+        title = f"PII binary: contains PII?  (negatives from other corpora{held})"
+        tag = f"{args.out_prefix}_presence_merged" + (
+            f"_ho_{args.holdout_source}" if args.holdout_source else "")
+    elif args.task == "presence":
         # Negatives are NOT PII-free text -- this corpus has none. They carry only
         # quasi-identifiers, so the title says so rather than claiming "has PII?".
         task = build_pii_presence_task(cap=args.cap)
@@ -255,15 +269,24 @@ def main():
           f"/ test {len(task.test_texts)} | 类别数 {task.n_classes}")
     print(f"示例: {task.train_texts[0][:110]!r} -> {task.class_names[task.y_train[0]]}")
 
+    # Cheap and always worth knowing: what a bag-of-words model gets on this exact
+    # split. A probe that only matches this has shown nothing about the model's
+    # representation, so the floor is measured before any GPU time is spent.
+    print("\n先量表面词汇下限（几秒，不用 GPU）...")
+    lex = lexical_baseline(task)
+
     res = run_task(task, args.model, epochs=args.epochs, device=device,
                    max_length=args.max_length, probe_train_cap=args.probe_cap)
 
+    res["lexical_baseline"] = lex
+    res["task_meta"] = {k: v for k, v in task.meta.items()}
     best = max(res["test_f1"].values())
     best_l = max(res["test_f1"], key=res["test_f1"].get)
     ctrl_mean = float(np.mean(list(res["ctrl_f1"].values())))
     print("\n" + "=" * 74)
     print(f"结果 — Macro-F1（随机基线 {res['chance']:.3f}）")
     print("=" * 74)
+    print(f"  TF-IDF 词袋基线    : {lex:.4f}  <- 任何结果都要高过这条线才有意义")
     print(f"  最佳单层           : {best:.4f}  (L{best_l})")
     print(f"  SIREN 跨层融合     : {res['siren_test_f1']:.4f}")
     print(f"  相对最佳单层增益   : {res['siren_test_f1']-best:+.4f}")
