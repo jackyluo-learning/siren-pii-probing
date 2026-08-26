@@ -122,7 +122,8 @@ class SirenTrainer:
             loss = self.criterion(logits, batch_y)
             total_loss += loss.item() * batch_z.size(0)
 
-            probs = torch.softmax(logits, dim=-1)[:, 1]
+            probs = torch.softmax(logits, dim=-1)[:, 1] if logits.size(-1) == 2 \
+                else torch.softmax(logits, dim=-1).max(dim=-1).values
             preds = torch.argmax(logits, dim=-1)
 
             all_preds.extend(preds.cpu().numpy())
@@ -133,22 +134,32 @@ class SirenTrainer:
         all_probs = np.array(all_probs)
         all_targets = np.array(all_targets)
 
+        # The head supports >2 classes, so every metric that defaults to a binary
+        # average has to be told what to do; "binary" raises on multiclass targets.
+        multiclass = int(getattr(self.model, "net", [None])[-1].out_features) > 2 \
+            if hasattr(self.model, "net") else len(np.unique(all_targets)) > 2
+        avg = "macro" if multiclass else "binary"
+
         metrics = {
             "loss": total_loss / len(dataloader.dataset),
             "accuracy": float(accuracy_score(all_targets, all_preds)),
-            "precision": float(precision_score(all_targets, all_preds, zero_division=0)),
-            "recall": float(recall_score(all_targets, all_preds, zero_division=0)),
+            "precision": float(precision_score(all_targets, all_preds, average=avg, zero_division=0)),
+            "recall": float(recall_score(all_targets, all_preds, average=avg, zero_division=0)),
             # Paper reports Macro-F1 to account for class imbalance; keep the legacy
-            # positive-class (binary) F1 too for continuity.
+            # positive-class (binary) F1 too when the task actually is binary.
             "f1": float(f1_score(all_targets, all_preds, average="macro", zero_division=0)),
             "f1_macro": float(f1_score(all_targets, all_preds, average="macro", zero_division=0)),
-            "f1_binary": float(f1_score(all_targets, all_preds, average="binary", zero_division=0)),
         }
+        if not multiclass:
+            metrics["f1_binary"] = float(
+                f1_score(all_targets, all_preds, average="binary", zero_division=0))
 
-        try:
-            metrics["auroc"] = float(roc_auc_score(all_targets, all_probs))
-        except ValueError:
-            metrics["auroc"] = 0.5
+        # AUROC on the positive class is only defined for a binary task.
+        if not multiclass:
+            try:
+                metrics["auroc"] = float(roc_auc_score(all_targets, all_probs))
+            except ValueError:
+                metrics["auroc"] = 0.5
 
         return metrics
 

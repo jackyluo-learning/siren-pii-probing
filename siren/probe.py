@@ -16,6 +16,7 @@ import numpy as np
 import torch
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score
+from sklearn.multiclass import OneVsRestClassifier
 
 
 # Paper Table 6 grid for the L1 inverse-regularization strength C.
@@ -63,29 +64,50 @@ class SafetyNeuronProbe:
         self.layer_best_c: Dict[int, float] = {}
 
     # ------------------------------------------------------------------ helpers
-    def _fit_single(self, C: float, X: np.ndarray, y: np.ndarray) -> LogisticRegression:
-        """Fit one L1 logistic-regression probe at inverse-strength C."""
+    def _fit_single(self, C: float, X: np.ndarray, y: np.ndarray):
+        """
+        Fit one L1 logistic-regression probe at inverse-strength C.
+
+        The liblinear solver the paper uses refuses n_classes >= 3, so multiclass
+        targets are wrapped in a one-vs-rest ensemble: every class still gets an
+        L1 + liblinear probe, which keeps the per-class setup identical to the
+        binary case (switching to `saga` would change the optimiser as well as
+        the multiclass scheme, and is far slower). The stacked per-class weights
+        are exposed as `coef_` so neuron selection is agnostic to which path ran.
+        """
         import warnings
+        base = lambda: LogisticRegression(
+            penalty="l1", solver="liblinear", C=C,
+            max_iter=self.max_iter, random_state=self.random_state,
+        )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            clf = LogisticRegression(
-                penalty="l1",
-                solver="liblinear",
-                C=C,
-                max_iter=self.max_iter,
-                random_state=self.random_state
-            )
-            clf.fit(X, y)
+            if len(np.unique(y)) > 2:
+                clf = OneVsRestClassifier(base())
+                clf.fit(X, y)
+                clf.coef_ = np.vstack([e.coef_[0] for e in clf.estimators_])
+            else:
+                clf = base()
+                clf.fit(X, y)
         return clf
 
     def _score(self, clf: LogisticRegression, X: np.ndarray, y: np.ndarray) -> float:
-        """Macro (or configured) F1 of a fitted probe on (X, y)."""
+        """Macro (or configured) F1 of a fitted probe on (X, y). Multiclass-safe."""
         preds = clf.predict(X)
         return float(f1_score(y, preds, average=self.average, zero_division=0))
 
     def _select_neurons(self, clf: LogisticRegression) -> List[int]:
-        """Pick the minimal neuron set whose cumulative normalized |weight| >= eta."""
-        weights = np.abs(clf.coef_[0])
+        """
+        Pick the minimal neuron set whose cumulative normalized |weight| >= eta.
+
+        Multiclass note: sklearn stores coef_ as (n_classes, D) for K>2 classes
+        (one-vs-rest with the liblinear solver) and (1, D) for binary. A neuron is
+        relevant if ANY class leans on it, so the per-neuron score is the maximum
+        magnitude across classes -- taking the mean would let one strongly-used
+        neuron be diluted by the classes that ignore it.
+        """
+        coef = np.asarray(clf.coef_)
+        weights = np.abs(coef).max(axis=0) if coef.shape[0] > 1 else np.abs(coef[0])
         total_weight = np.sum(weights)
 
         if total_weight == 0 or np.isnan(total_weight):

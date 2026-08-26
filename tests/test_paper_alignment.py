@@ -138,3 +138,67 @@ def test_paired_response_adapters_keep_prompt_response_boundary():
     # Missing pieces yield nothing rather than a malformed pair.
     assert _paired_beavertails({"prompt": "p", "response": "", "is_safe": False}) == []
     assert _paired_wildguard({"prompt": "p", "response": "r"}) == []
+
+
+def test_multiclass_probe_selects_neurons_across_all_classes():
+    """liblinear refuses K>=3, so the probe must wrap OvR and stack coef_."""
+    import numpy as np
+    from siren.probe import SafetyNeuronProbe, PAPER_C_GRID
+
+    rng = np.random.RandomState(0)
+    D, K, BLOCK = 40, 4, 5
+
+    def make(n):
+        y = rng.randint(0, K, n)
+        X = rng.randn(n, D) * 0.4
+        for k in range(K):                      # each class driven by its own block
+            X[y == k, k * BLOCK:(k + 1) * BLOCK] += 2.5
+        return X, y
+
+    Xtr, ytr = make(400)
+    Xva, yva = make(200)
+    probe = SafetyNeuronProbe(eta=0.8, c_grid=PAPER_C_GRID, average="macro")
+    neurons, f1 = probe.fit_all_layers({1: Xtr}, ytr, {1: Xva}, yva)
+
+    assert probe.layer_probes[1].coef_.shape == (K, D)   # stacked per-class weights
+    assert f1[1] > 0.9
+    # Every class's driving block must be represented, which is the point of
+    # taking the max magnitude across classes rather than the mean.
+    for k in range(K):
+        assert any(i in neurons[1] for i in range(k * BLOCK, (k + 1) * BLOCK))
+
+
+def test_binary_probe_path_unchanged_by_multiclass_support():
+    import numpy as np
+    from siren.probe import SafetyNeuronProbe, PAPER_C_GRID
+
+    rng = np.random.RandomState(1)
+    X = rng.randn(300, 20)
+    y = (X[:, 0] > 0).astype(int)
+    Xv = rng.randn(120, 20)
+    yv = (Xv[:, 0] > 0).astype(int)
+    probe = SafetyNeuronProbe(eta=0.8, c_grid=PAPER_C_GRID, average="macro")
+    probe.fit_layer(1, X, y, Xv, yv)
+    assert probe.layer_probes[1].coef_.shape == (1, 20)   # still the plain path
+
+
+def test_pii_task_builders_filter_and_label_correctly(monkeypatch):
+    import numpy as np
+    import siren.pii_benchmark as B
+
+    rows = ([("mail a@b.com", {"EMAIL"})] * 30
+            + [("ssn 123-45-6789", {"SOCIALNUM"})] * 30
+            + [("both a@b.com 123-45-6789", {"EMAIL", "SOCIALNUM"})] * 10
+            + [("city Beijing", {"CITY"})] * 10)
+    monkeypatch.setattr(B, "_rows", lambda cap, language=None, verbose=True: iter(rows))
+
+    # Binary: negatives are other-PII texts from the same corpus, never plain text.
+    b = B.build_pii_binary_task(target="SOCIALNUM", cap=100, verbose=False)
+    assert b.n_classes == 2 and set(np.unique(b.y_train)) <= {0, 1}
+
+    # Multiclass: texts carrying several target categories are dropped, not guessed.
+    m = B.build_pii_multiclass_task(categories=["EMAIL", "SOCIALNUM"], cap=100,
+                                    min_per_class=10, verbose=False)
+    assert m.class_names == ["EMAIL", "SOCIALNUM"]
+    assert m.meta["dropped_mixed"] == 10     # the 10 two-label rows
+    assert m.meta["dropped_none"] == 10      # the 10 CITY-only rows
