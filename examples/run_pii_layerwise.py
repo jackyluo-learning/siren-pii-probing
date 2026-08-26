@@ -42,8 +42,17 @@ from run_real_layerwise_experiment import (load_model_and_extractor, pool_texts,
 warnings.filterwarnings("ignore")
 
 
-def _fit_probe(tag: str, tr, y, va, y_va, layers, eta):
-    """Fit one layer-wise probe set with a progress bar over layers."""
+def _fit_probe(tag: str, tr, y, va, y_va, layers, eta, reshuffle_each_layer: bool = False):
+    """
+    Fit one layer-wise probe set with a progress bar over layers.
+
+    `reshuffle_each_layer` is for the shuffled-label control. Reusing ONE
+    permutation across all layers makes the 36 points 36 correlated readings of
+    a single draw, so the whole control band rides up or down with that draw's
+    luck; measured on matched synthetic data the per-draw sd is ~0.06, which is
+    enough to park an entire "chance" band near 0.60. Drawing a fresh permutation
+    per layer makes the points independent, so the band centres on chance.
+    """
     try:
         from tqdm.auto import tqdm
     except Exception:
@@ -51,8 +60,12 @@ def _fit_probe(tag: str, tr, y, va, y_va, layers, eta):
             return x
     probe = SafetyNeuronProbe(eta=eta, c_grid=PAPER_C_GRID, average="macro")
     neurons, val_f1 = {}, {}
-    for l in tqdm(layers, desc=tag, unit="layer"):
-        n, f = probe.fit_layer(l, tr[l], y, va[l], y_va)
+    for i, l in enumerate(tqdm(layers, desc=tag, unit="layer")):
+        y_l = y
+        if reshuffle_each_layer:
+            y_l = y.copy()
+            np.random.RandomState(1000 + i).shuffle(y_l)
+        n, f = probe.fit_layer(l, tr[l], y_l, va[l], y_va)
         neurons[l], val_f1[l] = n, f
     return probe, neurons, val_f1
 
@@ -106,11 +119,9 @@ def run_task(task: PIITask, model_name: str, eta: float = 0.8,
 
     # Same workload as the main probe — it used to run silently, which reads as
     # a hang. Progress bar and the same subsample apply here too.
-    print("打乱标签对照探针（与上一步同等工作量）...", flush=True)
-    rng = np.random.RandomState(0)
-    y_shuf = y_fit.copy()
-    rng.shuffle(y_shuf)
-    ctrl, _, _ = _fit_probe("control", tr_fit, y_shuf, va, task.y_val, layers, eta)
+    print("打乱标签对照探针（与上一步同等工作量，每层独立打乱）...", flush=True)
+    ctrl, _, _ = _fit_probe("control", tr_fit, y_fit, va, task.y_val, layers, eta,
+                            reshuffle_each_layer=True)
     ctrl_f1 = {l: float(f1_score(task.y_test, ctrl.layer_probes[l].predict(te[l]),
                                  average="macro", zero_division=0)) for l in layers}
 
