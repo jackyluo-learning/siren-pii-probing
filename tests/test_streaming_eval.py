@@ -62,3 +62,25 @@ def test_first_flag_respects_warmup_and_detection_curve_is_monotonic():
     assert np.all(np.diff(curve) >= 0)          # cumulative -> non-decreasing
     assert curve[2] == pytest.approx(1 / 3)     # only the t=3 one flagged by pos 3
     assert curve[-1] == pytest.approx(2 / 3)    # the never-flagged one stays out
+
+
+def test_balanced_subsample_keeps_every_class():
+    """Regression: the binary-only version dropped classes 2..K-1 entirely."""
+    import numpy as np
+    from run_real_layerwise_experiment import _balanced_subsample
+
+    y = np.repeat(np.arange(6), 500)          # 6 classes x 500
+    sel = _balanced_subsample(y, cap=1200)
+    counts = np.bincount(y[sel], minlength=6)
+    assert len(sel) <= 1200
+    assert (counts == 200).all(), counts       # cap // 6 from each class
+
+    # Binary behaviour is unchanged.
+    yb = np.repeat([0, 1], 500)
+    cb = np.bincount(yb[_balanced_subsample(yb, cap=400)], minlength=2)
+    assert (cb == 200).all(), cb
+
+    # A class thinner than the quota contributes everything it has.
+    ys = np.concatenate([np.zeros(500), np.ones(30), np.full(500, 2)]).astype(int)
+    cs = np.bincount(ys[_balanced_subsample(ys, cap=600)], minlength=3)
+    assert cs.tolist() == [200, 30, 200], cs

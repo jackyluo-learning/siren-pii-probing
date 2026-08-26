@@ -103,16 +103,24 @@ def extract_layerwise_features(
 
 
 def _balanced_subsample(y: np.ndarray, cap: int, seed: int = 42) -> np.ndarray:
-    """Indices of a class-balanced subsample of size <= cap (for probe fitting)."""
+    """
+    Indices of a class-balanced subsample of size <= cap (for probe fitting).
+
+    Every class present in y gets cap // n_classes rows. This used to hard-code
+    `y == 1` and `y == 0`, which silently dropped classes 2..K-1 on a multiclass
+    task: the probe then trained on two of six labels and could never predict the
+    other four, landing macro-F1 on the 1/6 chance line while looking like a
+    legitimate run.
+    """
     idx = np.arange(len(y))
     if cap <= 0 or len(y) <= cap:
         return idx
     rng = np.random.RandomState(seed)
-    pos, neg = idx[y == 1], idx[y == 0]
-    k = cap // 2
+    classes = np.unique(y)
+    k = max(1, cap // len(classes))
     sel = np.concatenate([
-        rng.choice(pos, min(k, len(pos)), replace=False),
-        rng.choice(neg, min(k, len(neg)), replace=False),
+        rng.choice(idx[y == c], min(k, int((y == c).sum())), replace=False)
+        for c in classes
     ])
     rng.shuffle(sel)
     return sel
