@@ -36,13 +36,30 @@ from siren import (AdaptiveNeuronAggregator, SafetyNeuronProbe,
 from siren.probe import PAPER_C_GRID
 from siren.pii_benchmark import (build_pii_binary_task, build_pii_multiclass_task,
                                  survey_categories, PIITask)
-from run_real_layerwise_experiment import load_model_and_extractor, pool_texts
+from run_real_layerwise_experiment import (load_model_and_extractor, pool_texts,
+                                           _balanced_subsample)
 
 warnings.filterwarnings("ignore")
 
 
+def _fit_probe(tag: str, tr, y, va, y_va, layers, eta):
+    """Fit one layer-wise probe set with a progress bar over layers."""
+    try:
+        from tqdm.auto import tqdm
+    except Exception:
+        def tqdm(x, **k):
+            return x
+    probe = SafetyNeuronProbe(eta=eta, c_grid=PAPER_C_GRID, average="macro")
+    neurons, val_f1 = {}, {}
+    for l in tqdm(layers, desc=tag, unit="layer"):
+        n, f = probe.fit_layer(l, tr[l], y, va[l], y_va)
+        neurons[l], val_f1[l] = n, f
+    return probe, neurons, val_f1
+
+
 def run_task(task: PIITask, model_name: str, eta: float = 0.8,
              mlp_hidden_dim: int = 256, epochs: int = 20,
+             probe_train_cap: int = 4000,
              device: str = "cpu", max_length: int = 128) -> Dict:
     """Paper pipeline on one PII task; returns per-layer and aggregated results."""
     tokenizer, _, extractor, num_layers = load_model_and_extractor(model_name, device)
@@ -55,9 +72,20 @@ def run_task(task: PIITask, model_name: str, eta: float = 0.8,
     layers = list(range(1, num_layers + 1))
     chance = 1.0 / task.n_classes
 
-    print(f"\n逐层 L1 探针（C 网格在验证集上选，Macro-F1）...", flush=True)
-    probe = SafetyNeuronProbe(eta=eta, c_grid=PAPER_C_GRID, average="macro")
-    safety_neurons, val_f1 = probe.fit_all_layers(tr, task.y_train, va, task.y_val)
+    # L1 coordinate descent scales with n_samples, and multiclass multiplies the
+    # cost by n_classes (one-vs-rest fits one probe per class). A class-balanced
+    # subsample keeps probe fitting to minutes; val/test stay full-size and the
+    # MLP head still trains on the full aggregated train set.
+    sub = _balanced_subsample(task.y_train, probe_train_cap)
+    tr_fit = {l: tr[l][sub] for l in layers}
+    y_fit = task.y_train[sub]
+    if len(sub) < len(task.y_train):
+        print(f"\n探针拟合使用类别均衡子采样 {len(sub)}/{len(task.y_train)} 条"
+              f"（{len(layers)} 层 × 4 个 C × {task.n_classes} 类 = "
+              f"{len(layers)*4*task.n_classes} 次 L1 拟合）", flush=True)
+    print("逐层 L1 探针（C 网格在验证集上选，Macro-F1）...", flush=True)
+    probe, safety_neurons, val_f1 = _fit_probe(
+        "probes", tr_fit, y_fit, va, task.y_val, layers, eta)
     test_f1 = {l: float(f1_score(task.y_test, probe.layer_probes[l].predict(te[l]),
                                  average="macro", zero_division=0)) for l in layers}
     for l in layers:
@@ -76,12 +104,13 @@ def run_task(task: PIITask, model_name: str, eta: float = 0.8,
         pred = mlp(z_te.to(trainer.device)).argmax(dim=1).cpu().numpy()
     siren_f1 = float(f1_score(task.y_test, pred, average="macro", zero_division=0))
 
-    print("打乱标签对照探针 ...", flush=True)
+    # Same workload as the main probe — it used to run silently, which reads as
+    # a hang. Progress bar and the same subsample apply here too.
+    print("打乱标签对照探针（与上一步同等工作量）...", flush=True)
     rng = np.random.RandomState(0)
-    y_shuf = task.y_train.copy()
+    y_shuf = y_fit.copy()
     rng.shuffle(y_shuf)
-    ctrl = SafetyNeuronProbe(eta=eta, c_grid=PAPER_C_GRID, average="macro")
-    ctrl.fit_all_layers(tr, y_shuf, va, task.y_val)
+    ctrl, _, _ = _fit_probe("control", tr_fit, y_shuf, va, task.y_val, layers, eta)
     ctrl_f1 = {l: float(f1_score(task.y_test, ctrl.layer_probes[l].predict(te[l]),
                                  average="macro", zero_division=0)) for l in layers}
 
@@ -178,6 +207,8 @@ def main():
     ap.add_argument("--min-per-class", type=int, default=60)
     ap.add_argument("--max-length", type=int, default=128)
     ap.add_argument("--epochs", type=int, default=20)
+    ap.add_argument("--probe-cap", type=int, default=4000,
+                    help="探针拟合的类别均衡样本上限（0 = 用全部；L1 成本随样本数线性增长）")
     ap.add_argument("--out-prefix", default="pii")
     args = ap.parse_args()
 
@@ -206,7 +237,7 @@ def main():
     print(f"示例: {task.train_texts[0][:110]!r} -> {task.class_names[task.y_train[0]]}")
 
     res = run_task(task, args.model, epochs=args.epochs, device=device,
-                   max_length=args.max_length)
+                   max_length=args.max_length, probe_train_cap=args.probe_cap)
 
     best = max(res["test_f1"].values())
     best_l = max(res["test_f1"], key=res["test_f1"].get)
