@@ -109,3 +109,26 @@ def test_track_handles_unsized_iterables():
     buf = io.StringIO()
     assert list(track((x for x in range(5)), "生成器", stream=buf)) == list(range(5))
     assert buf.getvalue().strip(), "无 total 时也要有输出"
+
+
+def test_track_defaults_to_lines_even_on_a_terminal():
+    """
+    Colab runs `!python` under a pty, so isatty() is True while the frontend
+    still shows only the last \\r frame. Keying on isatty() therefore picked the
+    bar and fixed nothing; lines must be the default regardless.
+    """
+    import io
+    import os
+    from unittest import mock
+    from siren.progress import track
+
+    class _FakeTTY(io.StringIO):
+        def isatty(self):
+            return True
+
+    buf = _FakeTTY()
+    with mock.patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("SIREN_PROGRESS", None)
+        list(track(range(30), "阶段", unit="步", stream=buf))
+    assert "\r" not in buf.getvalue(), "伪终端下仍必须走行模式"
+    assert "30/30 (100%)" in buf.getvalue()

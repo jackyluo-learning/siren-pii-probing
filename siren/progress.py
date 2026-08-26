@@ -1,16 +1,22 @@
 """
 Progress reporting that survives a non-TTY pipe.
 
-tqdm redraws in place with a carriage return. Colab runs `!python ...` in a
-subprocess whose stdout is a pipe, and it discards those intermediate frames, so
-a long stage shows "0%" and then jumps straight to "100%" on completion -- which
-reads as a hang, and repeatedly did during this project's Colab runs.
+tqdm redraws in place with a carriage return, and Colab renders only the final
+frame of such a sequence: a long stage shows "0%" and then jumps to "100%" once
+it finishes, which reads as a hang and repeatedly did during this project's runs.
 
-So: a real tqdm bar when stdout is a terminal, and newline-terminated lines
-otherwise, each one flushed. Lines are throttled by both count and time, so a
-464-batch pooling stage reports about twenty times rather than 464.
+Detecting that case from inside the process turned out not to work. Colab runs
+`!python ...` under a pseudo-terminal, so isatty() is True even though the
+frontend still swallows the intermediate frames -- a first attempt keyed on
+isatty() picked the bar and changed nothing.
+
+So the default is now newline-terminated, flushed lines everywhere, which is
+readable in every environment and cannot silently regress. Set SIREN_PROGRESS=bar
+for a tqdm bar in a local terminal. Lines are throttled by both count and time,
+so a 464-batch pooling stage reports about twenty times rather than 464.
 """
 
+import os
 import sys
 import time
 from typing import Iterable, Optional, TextIO
@@ -66,11 +72,10 @@ class _LineProgress:
 def track(iterable: Iterable, desc: str, total: Optional[int] = None,
           unit: str = "it", stream: Optional[TextIO] = None) -> Iterable:
     """
-    Wrap an iterable with progress output appropriate to where stdout goes.
+    Wrap an iterable with progress that is visible in every environment.
 
-    A terminal gets a tqdm bar; anything else (Colab's `!python`, a pipe, a log
-    file) gets one flushed line per update, so progress is visible instead of
-    buffered away until the stage ends.
+    One flushed line per update by default -- Colab, pipes, log files and plain
+    terminals all render those. SIREN_PROGRESS=bar opts into a tqdm bar locally.
     """
     if total is None:
         try:
@@ -79,7 +84,7 @@ def track(iterable: Iterable, desc: str, total: Optional[int] = None,
             total = None
 
     out = stream or sys.stdout
-    if getattr(out, "isatty", lambda: False)():
+    if os.environ.get("SIREN_PROGRESS", "").strip().lower() == "bar":
         try:
             from tqdm.auto import tqdm
             return tqdm(iterable, desc=desc, total=total, unit=unit)
