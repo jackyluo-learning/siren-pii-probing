@@ -31,6 +31,28 @@ import numpy as np
 
 HF_DATASET = "ai4privacy/pii-masking-200k"
 
+# Label vocabulary observed in the dataset (verified against the HF dataset
+# viewer). Recorded because the names are not the obvious ones: the social
+# security label is SSN (not SOCIALNUM) and the phone label is PHONENUMBER
+# (not TELEPHONENUM). Guessing a name silently yields an empty task.
+KNOWN_LABELS = {
+    "ACCOUNTNAME", "ACCOUNTNUMBER", "AGE", "AMOUNT", "BITCOINADDRESS",
+    "BUILDINGNUMBER", "CITY", "COMPANYNAME", "COUNTY", "CREDITCARDCVV",
+    "CREDITCARDISSUER", "CREDITCARDNUMBER", "CURRENCY", "CURRENCYCODE",
+    "CURRENCYNAME", "CURRENCYSYMBOL", "DATE", "DOB", "EMAIL", "ETHEREUMADDRESS",
+    "EYECOLOR", "FIRSTNAME", "GENDER", "HEIGHT", "IBAN", "IPV4", "IPV6",
+    "JOBAREA", "JOBTITLE", "LASTNAME", "LITECOINADDRESS", "MAC", "MASKEDNUMBER",
+    "MIDDLENAME", "NEARBYGPSCOORDINATE", "ORDINALDIRECTION", "PASSWORD",
+    "PHONEIMEI", "PHONENUMBER", "PIN", "PREFIX", "SECONDARYADDRESS", "SEX",
+    "SSN", "STATE", "STREET", "TIME", "URL", "USERNAME", "VEHICLEVIN",
+    "VEHICLEVRM", "ZIPCODE",
+}
+
+# A default multiclass set: distinct identifier *types* that a representation
+# should be able to tell apart, all frequent enough to fill a class.
+SUGGESTED_MULTICLASS = ["EMAIL", "SSN", "CREDITCARDNUMBER", "IPV4",
+                        "PHONENUMBER", "IBAN"]
+
 
 @dataclass
 class PIITask:
@@ -49,16 +71,32 @@ class PIITask:
         return len(self.class_names)
 
 
-def _rows(cap: int, language: Optional[str] = "English", verbose: bool = True):
+# The `language` column holds ISO codes ("en"), not names ("English"). Accept
+# either spelling so a natural argument does not silently filter everything out.
+_LANG_ALIASES = {
+    "en": {"en", "english"}, "fr": {"fr", "french"}, "de": {"de", "german"},
+    "it": {"it", "italian"}, "es": {"es", "spanish"}, "nl": {"nl", "dutch"},
+}
+
+
+def _lang_matches(value: str, wanted: str) -> bool:
+    v, w = str(value).strip().lower(), str(wanted).strip().lower()
+    return v == w or v in _LANG_ALIASES.get(w, {w}) or w in _LANG_ALIASES.get(v, {v})
+
+
+def _rows(cap: int, language: Optional[str] = "en", verbose: bool = True):
     """Stream rows, optionally restricted to one language."""
     from datasets import load_dataset
 
     ds = load_dataset(HF_DATASET, split="train", streaming=True)
-    kept = 0
+    kept = seen = 0
+    langs_seen: Counter = Counter()
     for row in ds:
         if kept >= cap:
             break
-        if language and str(row.get("language", "")).strip() != language:
+        seen += 1
+        langs_seen[str(row.get("language", "")).strip()] += 1
+        if language and not _lang_matches(row.get("language", ""), language):
             continue
         text = (row.get("source_text") or "").strip()
         mask = row.get("privacy_mask") or []
@@ -71,8 +109,14 @@ def _rows(cap: int, language: Optional[str] = "English", verbose: bool = True):
         kept += 1
         yield text, labels
 
+    if kept == 0:
+        raise RuntimeError(
+            f"扫描了 {seen} 行，但 language={language!r} 一条都没匹配上。"
+            f"该列出现过的取值：{dict(langs_seen.most_common(6))}。"
+            "改用其中之一，或传 language=None 以不做语言过滤。")
 
-def survey_categories(cap: int = 4000, language: Optional[str] = "English",
+
+def survey_categories(cap: int = 4000, language: Optional[str] = "en",
                       top: int = 25, verbose: bool = True) -> List[Tuple[str, int]]:
     """How often does each PII category appear? Use this to choose classes."""
     counts: Counter = Counter()
@@ -101,9 +145,9 @@ def _split(texts: List[str], y: np.ndarray, val_frac: float, test_frac: float,
 
 
 def build_pii_binary_task(
-    target: str = "SOCIALNUM",
+    target: str = "SSN",
     cap: int = 6000,
-    language: Optional[str] = "English",
+    language: Optional[str] = "en",
     val_frac: float = 0.15,
     test_frac: float = 0.15,
     seed: int = 42,
@@ -117,11 +161,23 @@ def build_pii_binary_task(
     only systematic difference is the kind of identifier present.
     """
     pos, neg = [], []
+    seen_labels: Counter = Counter()
+    target = target.strip().upper()
+    if target not in KNOWN_LABELS:
+        print(f"⚠️  {target!r} 不在已知标签词表里。已知的例如："
+              f"{sorted(KNOWN_LABELS)[:10]} …（先跑 --task survey 确认）")
     for text, labels in _rows(cap, language, verbose):
+        seen_labels.update(labels)
         (pos if target in labels else neg).append(text)
 
     if not pos:
-        raise ValueError(f"类别 {target!r} 在前 {cap} 条中没有出现，换一个类别或加大 cap。")
+        raise ValueError(
+            f"类别 {target!r} 在扫描的 {cap} 行里没有出现。"
+            f"实际最常见的类别是：{[n for n, _ in seen_labels.most_common(12)]}。"
+            "先跑 --task survey 看完整分布，再选一个存在的类别。")
+    if not neg:
+        raise ValueError(
+            f"每一条文本都含 {target!r}，没有负样本可用。换一个不那么普遍的类别。")
 
     rng = np.random.RandomState(seed)
     k = min(len(pos), len(neg))
@@ -144,7 +200,7 @@ def build_pii_multiclass_task(
     categories: Optional[Sequence[str]] = None,
     n_categories: int = 6,
     cap: int = 12000,
-    language: Optional[str] = "English",
+    language: Optional[str] = "en",
     min_per_class: int = 60,
     balance: bool = True,
     val_frac: float = 0.15,
@@ -165,6 +221,8 @@ def build_pii_multiclass_task(
     the drop count is reported so the cost is visible.
     """
     rows = list(_rows(cap, language, verbose))
+    if not rows:
+        raise RuntimeError("没有取到任何文本，检查 cap 与 language 参数。")
     if categories is None:
         counts: Counter = Counter()
         for _, labels in rows:
@@ -172,7 +230,9 @@ def build_pii_multiclass_task(
         categories = [c for c, _ in counts.most_common(n_categories)]
         if verbose:
             print(f"未指定类别，按频次自动选取 {n_categories} 个：{list(categories)}")
-    cats: List[str] = list(categories)
+    cats: List[str] = [c.strip().upper() for c in categories]
+    if not cats:
+        raise ValueError("类别列表为空，无法构建多分类任务。")
     cat_set: Set[str] = set(cats)
 
     texts, labels_out, dropped_mixed, dropped_none = [], [], 0, 0
@@ -188,6 +248,13 @@ def build_pii_multiclass_task(
 
     y = np.array(labels_out, dtype=np.int64)
     counts_per = Counter(y.tolist())
+    if not counts_per:
+        avail: Counter = Counter()
+        for _, labels in rows:
+            avail.update(labels)
+        raise ValueError(
+            f"指定的类别 {cats} 没有匹配到任何「恰好含一个」的文本。"
+            f"语料里实际存在的类别：{[n for n, _ in avail.most_common(15)]}。")
     thin = [cats[c] for c in range(len(cats)) if counts_per.get(c, 0) < min_per_class]
     if thin:
         raise ValueError(

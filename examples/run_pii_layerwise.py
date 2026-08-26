@@ -157,7 +157,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--task", choices=["survey", "binary", "multiclass"], default="multiclass")
     ap.add_argument("--model", default="Qwen/Qwen3-4B")
-    ap.add_argument("--target", default="SOCIALNUM", help="binary 模式的目标类别")
+    ap.add_argument("--target", default="SSN", help="binary 模式的目标类别（注意是 SSN 不是 SOCIALNUM）")
     ap.add_argument("--categories", default=None, help="multiclass 模式的类别，逗号分隔")
     ap.add_argument("--n-categories", type=int, default=6)
     ap.add_argument("--cap", type=int, default=12000, help="流式扫描的原始行数上限")
