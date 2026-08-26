@@ -97,13 +97,26 @@ def run_task(task: PIITask, model_name: str, eta: float = 0.8,
     }
 
 
+def _fig_setup():
+    """
+    All in-figure text is English on purpose.
+
+    Matplotlib's bundled DejaVu Sans carries no CJK glyphs and Colab ships no
+    Chinese font, so Chinese axis labels and titles render as tofu boxes. Rather
+    than depend on a font being installed, the figures stay English; the Chinese
+    commentary lives in the console output and the notebook prose.
+    """
+    plt.rcParams["font.sans-serif"] = ["DejaVu Sans", "Arial", "Helvetica"]
+    plt.rcParams["axes.unicode_minus"] = False
+
+
 def plot_layer_curve(res: Dict, title: str, out: str):
+    _fig_setup()
     layers = sorted(res["test_f1"])
     y = np.array([res["test_f1"][l] for l in layers])
     c = np.array([res["ctrl_f1"][l] for l in layers])
     x = np.arange(len(layers))
 
-    plt.rcParams["font.sans-serif"] = ["DejaVu Sans", "Arial"]
     fig, ax = plt.subplots(figsize=(8, 5.2), dpi=200)
     ax.grid(True, linestyle="-", linewidth=.6, alpha=.35, color="#CCCCCC", zorder=1)
     ax.plot(x, y, color="#C88BA8", linewidth=1.1, alpha=.7, zorder=2)
@@ -130,6 +143,7 @@ def plot_layer_curve(res: Dict, title: str, out: str):
 
 
 def plot_confusion(res: Dict, out: str):
+    _fig_setup()
     names = res["class_names"]
     cm = confusion_matrix(res["y_true"], res["y_pred"], labels=list(range(len(names))))
     cmn = cm / np.maximum(cm.sum(axis=1, keepdims=True), 1)
@@ -141,9 +155,9 @@ def plot_confusion(res: Dict, out: str):
     short = [x if len(x) <= 14 else x[:13] + "…" for x in names]
     ax.set_xticks(range(n)); ax.set_xticklabels(short, rotation=45, ha="right", fontsize=9)
     ax.set_yticks(range(n)); ax.set_yticklabels(short, fontsize=9)
-    ax.set_xlabel("预测类别 Predicted", fontsize=11)
-    ax.set_ylabel("真实类别 True", fontsize=11)
-    ax.set_title("多分类混淆矩阵（行归一化）", fontsize=12, pad=10)
+    ax.set_xlabel("Predicted class", fontsize=11)
+    ax.set_ylabel("True class", fontsize=11)
+    ax.set_title("Confusion matrix (row-normalised, %)", fontsize=12, pad=10)
     for i in range(n):
         for j in range(n):
             if cm[i, j]:
@@ -178,13 +192,13 @@ def main():
 
     if args.task == "binary":
         task = build_pii_binary_task(target=args.target, cap=args.cap)
-        title = f"PII 二分类：是否含 {args.target}（负样本含其他 PII）"
+        title = f"PII binary: contains {args.target}?  (negatives carry other PII)"
         tag = f"{args.out_prefix}_binary_{args.target.lower()}"
     else:
         cats = [c.strip() for c in args.categories.split(",")] if args.categories else None
         task = build_pii_multiclass_task(categories=cats, n_categories=args.n_categories,
                                          cap=args.cap, min_per_class=args.min_per_class)
-        title = f"PII 多分类：{task.n_classes} 个类别"
+        title = f"PII multiclass: {task.n_classes} categories"
         tag = f"{args.out_prefix}_multiclass_{task.n_classes}way"
 
     print(f"\n数据划分: train {len(task.train_texts)} / val {len(task.val_texts)} "
