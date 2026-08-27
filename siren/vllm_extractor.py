@@ -78,6 +78,22 @@ def check_runtime() -> None:
             f"导入 vllm_hook_plugins 失败：{exc}\n"
             "  先跑: pip install -e /content/vLLM-Hook/vllm_hook_plugins") from exc
 
+    # vLLM 0.11's get_cached_tokenizer reads tokenizer.all_special_tokens_extended,
+    # which transformers removed in the v5 tokenizer refactor. vLLM declares only
+    # transformers>=4.55.2, so pip happily leaves a v5 in place and the failure
+    # lands inside HookLLM(...) -- after the 8 GB model download. Check the
+    # capability itself rather than comparing version numbers, and check it here
+    # so it costs a second instead of ten minutes.
+    import transformers
+    from transformers.tokenization_utils_base import PreTrainedTokenizerBase
+    if not hasattr(PreTrainedTokenizerBase, "all_special_tokens_extended"):
+        import vllm
+        raise RuntimeError(
+            f"transformers {transformers.__version__} 移除了 all_special_tokens_extended，"
+            f"而 vLLM {vllm.__version__} 的分词器缓存要读它。\n"
+            "  修法: pip install 'transformers==4.57.6'   （4.x 最后一版，Qwen3 从 4.51 起支持）\n"
+            "  若换用更新的 vLLM 已不再依赖该属性，可删掉这段检查。")
+
     import torch
     if not torch.cuda.is_available():
         raise RuntimeError("没有可用 GPU，vLLM 无法运行。")
