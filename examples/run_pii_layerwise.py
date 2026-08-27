@@ -35,7 +35,7 @@ from sklearn.metrics import f1_score, confusion_matrix, classification_report
 from siren import (AdaptiveNeuronAggregator, SafetyNeuronProbe,
                    SirenMLPHead, SirenTrainer)
 from siren.probe import PAPER_C_GRID
-from siren.progress import fmt_duration, track
+from siren.progress import track
 from siren.pii_benchmark import (build_pii_binary_task, build_pii_multiclass_task,
                                  build_pii_presence_task,
                                  build_pii_presence_merged_task, lexical_baseline,
@@ -59,20 +59,24 @@ def _fit_probe(tag: str, tr, y, va, y_va, layers, eta,
     per layer makes the points independent, so the band centres on chance.
     """
     probe = SafetyNeuronProbe(eta=eta, c_grid=PAPER_C_GRID, average="macro")
-    neurons, val_f1 = {}, {}
+    neurons, val_f1, y_used = {}, {}, {}
     for i, l in enumerate(track(layers, desc=tag, unit="层", note=note)):
         y_l = y
         if reshuffle_each_layer:
             y_l = y.copy()
             np.random.RandomState(1000 + i).shuffle(y_l)
+        y_used[l] = y_l
         n, f = probe.fit_layer(l, tr[l], y_l, va[l], y_va)
         neurons[l], val_f1[l] = n, f
-    return probe, neurons, val_f1
+    # Each layer trains on its own permutation, so anything scoring the fit
+    # afterwards has to use that layer's labels, not the originals.
+    return probe, neurons, val_f1, y_used
 
 
 def run_task(task: PIITask, model_name: str, eta: float = 0.8,
              mlp_hidden_dim: int = 256, epochs: int = 20,
              probe_train_cap: int = 4000,
+             control_train_cap: int = 1500,
              device: str = "cpu", max_length: int = 128) -> Dict:
     """Paper pipeline on one PII task; returns per-layer and aggregated results."""
     tokenizer, _, extractor, num_layers = load_model_and_extractor(model_name, device)
@@ -98,7 +102,7 @@ def run_task(task: PIITask, model_name: str, eta: float = 0.8,
               f"{len(layers)*4*task.n_classes} 次 L1 拟合）", flush=True)
     print("逐层 L1 探针（C 网格在验证集上选，Macro-F1）...", flush=True)
     _t0 = time.time()
-    probe, safety_neurons, val_f1 = _fit_probe(
+    probe, safety_neurons, val_f1, _ = _fit_probe(
         "逐层 L1 探针", tr_fit, y_fit, va, task.y_val, layers, eta)
     probe_secs = time.time() - _t0
     test_f1 = {l: float(f1_score(task.y_test, probe.layer_probes[l].predict(te[l]),
@@ -121,21 +125,40 @@ def run_task(task: PIITask, model_name: str, eta: float = 0.8,
 
     # Same workload as the main probe — it used to run silently, which reads as
     # a hang. Progress bar and the same subsample apply here too.
-    print("打乱标签对照探针（与上一步同等工作量，每层独立打乱）...", flush=True)
-    # Shuffled labels give the solver nothing to descend towards, so it runs to
-    # max_iter: measured at 3.5-4.5x the real-label fit on this shape. Saying so
-    # before the stage starts is the difference between a long wait and one that
-    # looks like a hang.
-    ctrl, _, _ = _fit_probe("打乱标签对照探针", tr_fit, y_fit, va, task.y_val, layers, eta,
-                            reshuffle_each_layer=True,
-                            note=f"打乱标签收敛更慢，实测约 3.7 倍，"
-                                 f"预计 {fmt_duration(probe_secs * 3.7)}")
+    print("打乱标签对照探针（每层独立打乱，用更小的子采样）...", flush=True)
+    # Shuffled labels leave the solver nothing to descend towards, so it runs to
+    # max_iter -- and that cost grows superlinearly in n: measured on this shape,
+    # one fit takes 0.09s at n=1000, 0.93s at n=3000 and 3.77s at n=4000, roughly
+    # n^2.7. At the probe stage's own 4000 rows a single control layer ran past
+    # 3.5 minutes against 4.4s for the real-label layer. Standardising the
+    # features does not help (measured 11.4x vs 10.6x), so the control gets its
+    # own, smaller subsample.
+    #
+    # That is a stronger control, not a weaker one. Its job is to show that a
+    # probe CAN fit arbitrary labels in the d >> n regime yet fails to
+    # generalise; at 1500 rows against 2560 dimensions the overparameterisation
+    # is more severe than at 4000. Train F1 is reported alongside to prove the
+    # control actually memorised its shuffled labels rather than simply failing
+    # to fit -- measured at 1.0000 for every n from 1000 to 4000.
+    csub = _balanced_subsample(task.y_train, control_train_cap)
+    ctr_fit = {l: tr[l][csub] for l in layers}
+    y_ctr = task.y_train[csub]
+    ctrl, _, _, ctrl_y = _fit_probe("打乱标签对照探针", ctr_fit, y_ctr, va, task.y_val, layers, eta,
+                                    reshuffle_each_layer=True,
+                                    note=f"打乱标签收敛慢得多且随样本数超线性增长，"
+                                         f"故改用 {len(csub)} 条子采样")
     ctrl_f1 = {l: float(f1_score(task.y_test, ctrl.layer_probes[l].predict(te[l]),
                                  average="macro", zero_division=0)) for l in layers}
+    # Does the control memorise? If train F1 is not near 1.0 it never fitted the
+    # noise, and its chance-level test score would prove nothing.
+    ctrl_train_f1 = float(np.mean([
+        f1_score(ctrl_y[l], ctrl.layer_probes[l].predict(ctr_fit[l]),
+                 average="macro", zero_division=0) for l in layers]))
 
     return {
         "num_layers": num_layers, "chance": chance,
         "val_f1": val_f1, "test_f1": test_f1, "ctrl_f1": ctrl_f1,
+        "ctrl_train_f1": ctrl_train_f1, "control_n": int(len(csub)),
         "best_c": dict(probe.layer_best_c),
         "neurons": {l: len(v) for l, v in safety_neurons.items()},
         "z_dim": int(z_tr.size(1)),
@@ -235,6 +258,8 @@ def main():
                     help="presence-merged: 每个干净语料取多少条负样本")
     ap.add_argument("--holdout-source", default=None,
                     help="presence-merged: 把该语料完全排除出训练，测试集负样本全取自它")
+    ap.add_argument("--control-cap", type=int, default=1500,
+                    help="打乱标签对照探针的子采样上限（其成本随样本数约 n^2.7 增长）")
     ap.add_argument("--val-source", default=None,
                     help="presence-merged: 验证集负样本专用的未见语料（默认自动选一个）")
     ap.add_argument("--out-prefix", default="pii")
@@ -285,7 +310,8 @@ def main():
     lex = lexical_baseline(task)
 
     res = run_task(task, args.model, epochs=args.epochs, device=device,
-                   max_length=args.max_length, probe_train_cap=args.probe_cap)
+                   max_length=args.max_length, probe_train_cap=args.probe_cap,
+                   control_train_cap=args.control_cap)
 
     res["lexical_baseline"] = lex
     res["task_meta"] = {k: v for k, v in task.meta.items()}
@@ -301,6 +327,8 @@ def main():
     print(f"  相对最佳单层增益   : {res['siren_test_f1']-best:+.4f}")
     print(f"  z 维度             : {res['z_dim']}")
     print(f"  打乱标签对照(均值) : {ctrl_mean:.4f}   <- 应接近随机基线 {res['chance']:.3f}")
+    print(f"    对照用 {res['control_n']} 条子采样，其训练集 F1 = {res['ctrl_train_f1']:.4f}"
+          f"   <- 接近 1.0 才说明它确实把乱标签背下来了，对照有效")
     verdict = "✅ 通过：真标签远高于对照，信号是真的" if best - ctrl_mean > 0.15 \
         else "⚠️ 存疑：真标签与对照差距过小，可能是维度过拟合"
     print(f"  对照判定           : {verdict}")
