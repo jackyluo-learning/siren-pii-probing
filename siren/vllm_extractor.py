@@ -43,8 +43,6 @@ from typing import Dict, List, Optional, Sequence
 
 import numpy as np
 
-from .progress import track
-
 
 def check_runtime() -> None:
     """
@@ -131,25 +129,31 @@ def _layer_index(layer_name: str, meta_num: Optional[int]) -> int:
 
 
 def suggest_chunk_size(num_layers: int, max_len: int, hidden: int, mode: str,
-                       fraction: float = 0.25) -> int:
+                       gpu_mem_util: float = 0.62) -> int:
     """
-    Size the chunk from free GPU memory instead of a fixed guess.
+    Size the first chunk from what is left OUTSIDE vLLM's reservation.
 
-    The hook cache lives on the GPU until retrieval: in all_tokens mode it holds
-    chunk x layers x seq_len x hidden fp16 values on top of the weights and KV
-    cache vLLM has already reserved. A fixed chunk of 32 was calibrated for 128
-    tokens and then OOM'd at 512 -- it asked for 3.36 GiB with 1.96 GiB free --
-    because the cost scales with max_model_len, which the caller sets separately.
-    So compute it, and only spend `fraction` of what is free.
+    Not from torch.cuda.mem_get_info(): the hook cache is allocated in the engine
+    subprocess, and the parent sees a different picture entirely. Measured on a
+    T4, the parent reported 5.3 GiB free and chose 60, while the engine process
+    had already given vLLM everything but 0.83 GiB of KV cache and died asking
+    for 2.17 GiB.
+
+    So budget analytically -- total x (1 - gpu_mem_util) -- and take a small
+    slice of it, because the save path pads and stacks the whole chunk, roughly
+    doubling peak usage. This is a starting point, not a guarantee: pool_layers
+    halves it and retries on OOM.
     """
     import torch
     per_text = num_layers * hidden * 2
     if mode == "all_tokens":
         per_text *= max_len
-    free = torch.cuda.mem_get_info()[0] if torch.cuda.is_available() else 2 << 30
-    n = max(1, int(free * fraction // max(per_text, 1)))
-    print(f"  hook 缓存约 {per_text/2**20:.1f} MB/条，空闲显存 {free/2**30:.1f} GiB"
-          f" → 块大小取 {n}", flush=True)
+    total = (torch.cuda.get_device_properties(0).total_memory
+             if torch.cuda.is_available() else 8 << 30)
+    outside = total * (1.0 - gpu_mem_util)
+    n = max(1, int(outside * 0.15 // max(per_text, 1)))
+    print(f"  hook 缓存约 {per_text/2**20:.1f} MB/条；vLLM 预留之外约 "
+          f"{outside/2**30:.1f} GiB → 起始块大小 {n}（OOM 会自动减半重试）", flush=True)
     return n
 
 
@@ -171,6 +175,14 @@ def build_hook_llm(model: str, num_layers: int, pooling: str = "mean",
     check_runtime()
     import torch
     from vllm_hook_plugins import HookLLM
+
+    # Show the memory arithmetic before the engine spends minutes proving it
+    # wrong. On a 14.56 GiB T4 with Qwen3-4B this is where it becomes visible
+    # that all_tokens capture over 36 layers has almost nothing left to live in.
+    total = torch.cuda.get_device_properties(0).total_memory / 2 ** 30
+    reserved = total * gpu_memory_utilization
+    print(f"  显存账目: 总 {total:.1f} GiB → vLLM 预留 {reserved:.1f} GiB"
+          f"（权重+KV）, 余下 {total - reserved:.1f} GiB 供 hook 缓存", flush=True)
 
     mode = "all_tokens" if pooling == "mean" else "last_token"
     cfg = _write_model_config(model, num_layers, mode,
@@ -195,33 +207,55 @@ def build_hook_llm(model: str, num_layers: int, pooling: str = "mean",
 
 def pool_layers(llm, texts: Sequence[str], num_layers: int, mode: str,
                 chunk_size: int = 0, show_progress: bool = True,
-                max_len: int = 128, hidden: int = 0) -> Dict[int, np.ndarray]:
+                max_len: int = 128, hidden: int = 0,
+                tokenizer=None) -> Dict[int, np.ndarray]:
     """
     Pool every layer for every text. Returns {layer: (N, hidden)}, order preserved.
 
-    Chunking is not about throughput -- vLLM batches internally -- but about the
-    hook cache. In all_tokens mode each text holds num_layers x seq_len x hidden
-    values before reduction: at 36 layers, 128 tokens and 2560 dims that is ~24 MB
-    of fp16 per text, so a whole split at once would be tens of gigabytes.
-    """
-    from vllm import SamplingParams
+    Two things here exist because of how the first runs failed.
 
+    Truncation is done here, not by either engine. HuggingFace's tokenizer
+    silently truncates at max_length; vLLM refuses -- "The decoder prompt (length
+    147) is longer than the maximum model length of 128" -- and kills the engine.
+    Tokenising once and passing prompt_token_ids also removes the last way the
+    two paths could see different inputs, which is what parity is actually
+    testing.
+
+    Chunk size backs off on OOM instead of trusting an estimate. Two estimates
+    have already been wrong: one measured the parent process rather than the
+    engine, the other ignored that saving pads and stacks the chunk.
+    """
+    import torch
+    from vllm import SamplingParams
+    try:                                    # 位置随 vLLM 版本变动过
+        from vllm.inputs import TokensPrompt
+    except ImportError:
+        from vllm import TokensPrompt
+
+    if tokenizer is None:
+        from transformers import AutoTokenizer
+        name = llm.llm_engine.vllm_config.model_config.tokenizer
+        tokenizer = AutoTokenizer.from_pretrained(name, trust_remote_code=True)
+    if not hidden:
+        hidden = int(llm.llm_engine.vllm_config.model_config.get_hidden_size())
     if chunk_size <= 0:
-        if not hidden:
-            hidden = int(llm.llm_engine.vllm_config.model_config.get_hidden_size())
         chunk_size = suggest_chunk_size(num_layers, max_len, hidden, mode)
 
     texts = list(texts)
+    enc = tokenizer(texts, truncation=True, max_length=max_len)["input_ids"]
+    enc = [ids if ids else [tokenizer.eos_token_id or 0] for ids in enc]
+    over = sum(1 for t in tokenizer(texts)["input_ids"] if len(t) > max_len)
+    if over:
+        print(f"  {over}/{len(texts)} 条超过 {max_len} 词元，已按与 HF 路径相同的方式截断",
+              flush=True)
+
     per_layer: Dict[int, List[np.ndarray]] = {l: [] for l in range(1, num_layers + 1)}
-    # One token is the minimum vLLM will generate; the prefill is what we want and
-    # the single decode step is negligible beside it.
     params = SamplingParams(temperature=0.0, max_tokens=1)
     reduce = "mean" if mode == "all_tokens" else "none"
 
-    starts = range(0, len(texts), chunk_size)
-    for start in (track(starts, desc="vLLM 抽取", unit="块") if show_progress else starts):
-        batch = texts[start:start + chunk_size]
-        llm.generate(batch, params, save_to_disk=True)
+    def run_chunk(ids_batch):
+        llm.generate([TokensPrompt(prompt_token_ids=i) for i in ids_batch],
+                     params, save_to_disk=True)
         stats = llm.analyze(analyzer_spec={"reduce": reduce})
         hs = stats["hidden_states"]
         if not hs:
@@ -232,9 +266,9 @@ def pool_layers(llm, texts: Sequence[str], num_layers: int, mode: str,
             idx = _layer_index(layer_name, getattr(tensors, "layer_num", None))
             if idx not in per_layer:
                 continue
-            if len(tensors) != len(batch):
+            if len(tensors) != len(ids_batch):
                 raise RuntimeError(
-                    f"层 {idx} 返回 {len(tensors)} 条，与本块的 {len(batch)} 条不符——"
+                    f"层 {idx} 返回 {len(tensors)} 条，与本块的 {len(ids_batch)} 条不符——"
                     "特征与标签会错位，中止。")
             seen.add(idx)
             per_layer[idx].extend(
@@ -244,6 +278,33 @@ def pool_layers(llm, texts: Sequence[str], num_layers: int, mode: str,
             raise RuntimeError(f"这些层没有被捕获：{sorted(missing)[:8]}…"
                                "（配置里的 layers 与模型层数不一致？）")
         llm.llm_engine.reset_prefix_cache()
+
+    # Not track(): the chunk size changes underfoot when a chunk is retried, so a
+    # bar built from a fixed range would count wrong. Plain lines, same throttle.
+    i, last_report, step = 0, 0, max(1, len(enc) // 20)
+    if show_progress:
+        print(f"vLLM 抽取: 开始，共 {len(enc)} 条", flush=True)
+    while i < len(enc):
+        n = min(chunk_size, len(enc) - i)
+        try:
+            run_chunk(enc[i:i + n])
+        except torch.OutOfMemoryError:
+            if chunk_size == 1:
+                raise RuntimeError(
+                    "块大小已降到 1 仍然显存不足。这张卡放不下"
+                    f"「{num_layers} 层 × {max_len} 词元」的 hook 缓存加上模型权重。\n"
+                    "  可选：--pooling last（每条只存一个向量，内存需求降两个数量级）、"
+                    "换更小的模型、或换显存更大的 GPU。")
+            chunk_size = max(1, chunk_size // 2)
+            torch.cuda.empty_cache()
+            print(f"  显存不足，块大小减半到 {chunk_size} 后重试", flush=True)
+            for l in per_layer:                      # 丢掉本块可能写入的半截数据
+                del per_layer[l][i:]
+            continue
+        i += n
+        if show_progress and (i - last_report >= step or i == len(enc)):
+            last_report = i
+            print(f"vLLM 抽取: {i}/{len(enc)} ({100*i/len(enc):.0f}%)", flush=True)
 
     return {l: np.stack(v) for l, v in per_layer.items()}
 
