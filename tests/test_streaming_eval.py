@@ -132,3 +132,27 @@ def test_track_defaults_to_lines_even_on_a_terminal():
         list(track(range(30), "阶段", unit="步", stream=buf))
     assert "\r" not in buf.getvalue(), "伪终端下仍必须走行模式"
     assert "30/30 (100%)" in buf.getvalue()
+
+
+def test_heartbeat_reports_liveness_when_items_are_slow():
+    """
+    Progress can only be emitted between items. The shuffled-label control fits
+    one layer roughly every 15s, so the stage announced itself and then went
+    quiet long enough to look stuck; a heartbeat has to cover that gap.
+    """
+    import io
+    import time
+    from siren.progress import _LineProgress
+
+    buf = io.StringIO()
+    bar = _LineProgress(total=2, desc="慢阶段", unit="层", heartbeat=0.2,
+                        note="预计约 1s", stream=buf)
+    time.sleep(0.75)                      # no item finishes in this window
+    bar.update()
+    bar.close()
+
+    lines = [l for l in buf.getvalue().splitlines() if l.strip()]
+    assert "预计约 1s" in lines[0], "开跑前要说明预计耗时"
+    beats = [l for l in lines if "运行中…" in l]
+    assert beats, "长时间无输出时必须报活"
+    assert any("已用" in b for b in beats)

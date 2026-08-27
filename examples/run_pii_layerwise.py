@@ -21,6 +21,7 @@ score high, the result is dimensionality overfitting, not signal.
 
 import argparse
 import json
+import time
 import warnings
 from typing import Dict, List, Sequence
 
@@ -34,7 +35,7 @@ from sklearn.metrics import f1_score, confusion_matrix, classification_report
 from siren import (AdaptiveNeuronAggregator, SafetyNeuronProbe,
                    SirenMLPHead, SirenTrainer)
 from siren.probe import PAPER_C_GRID
-from siren.progress import track
+from siren.progress import fmt_duration, track
 from siren.pii_benchmark import (build_pii_binary_task, build_pii_multiclass_task,
                                  build_pii_presence_task,
                                  build_pii_presence_merged_task, lexical_baseline,
@@ -45,7 +46,8 @@ from run_real_layerwise_experiment import (load_model_and_extractor, pool_texts,
 warnings.filterwarnings("ignore")
 
 
-def _fit_probe(tag: str, tr, y, va, y_va, layers, eta, reshuffle_each_layer: bool = False):
+def _fit_probe(tag: str, tr, y, va, y_va, layers, eta,
+               reshuffle_each_layer: bool = False, note: str = ""):
     """
     Fit one layer-wise probe set with a progress bar over layers.
 
@@ -58,7 +60,7 @@ def _fit_probe(tag: str, tr, y, va, y_va, layers, eta, reshuffle_each_layer: boo
     """
     probe = SafetyNeuronProbe(eta=eta, c_grid=PAPER_C_GRID, average="macro")
     neurons, val_f1 = {}, {}
-    for i, l in enumerate(track(layers, desc=tag, unit="层")):
+    for i, l in enumerate(track(layers, desc=tag, unit="层", note=note)):
         y_l = y
         if reshuffle_each_layer:
             y_l = y.copy()
@@ -95,8 +97,10 @@ def run_task(task: PIITask, model_name: str, eta: float = 0.8,
               f"（{len(layers)} 层 × 4 个 C × {task.n_classes} 类 = "
               f"{len(layers)*4*task.n_classes} 次 L1 拟合）", flush=True)
     print("逐层 L1 探针（C 网格在验证集上选，Macro-F1）...", flush=True)
+    _t0 = time.time()
     probe, safety_neurons, val_f1 = _fit_probe(
         "逐层 L1 探针", tr_fit, y_fit, va, task.y_val, layers, eta)
+    probe_secs = time.time() - _t0
     test_f1 = {l: float(f1_score(task.y_test, probe.layer_probes[l].predict(te[l]),
                                  average="macro", zero_division=0)) for l in layers}
     for l in layers:
@@ -118,8 +122,14 @@ def run_task(task: PIITask, model_name: str, eta: float = 0.8,
     # Same workload as the main probe — it used to run silently, which reads as
     # a hang. Progress bar and the same subsample apply here too.
     print("打乱标签对照探针（与上一步同等工作量，每层独立打乱）...", flush=True)
+    # Shuffled labels give the solver nothing to descend towards, so it runs to
+    # max_iter: measured at 3.5-4.5x the real-label fit on this shape. Saying so
+    # before the stage starts is the difference between a long wait and one that
+    # looks like a hang.
     ctrl, _, _ = _fit_probe("打乱标签对照探针", tr_fit, y_fit, va, task.y_val, layers, eta,
-                            reshuffle_each_layer=True)
+                            reshuffle_each_layer=True,
+                            note=f"打乱标签收敛更慢，实测约 3.7 倍，"
+                                 f"预计 {fmt_duration(probe_secs * 3.7)}")
     ctrl_f1 = {l: float(f1_score(task.y_test, ctrl.layer_probes[l].predict(te[l]),
                                  average="macro", zero_division=0)) for l in layers}
 

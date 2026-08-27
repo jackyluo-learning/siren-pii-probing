@@ -1,28 +1,30 @@
 """
-Progress reporting that survives a non-TTY pipe.
+Progress reporting that stays visible in every environment.
 
 tqdm redraws in place with a carriage return, and Colab renders only the final
 frame of such a sequence: a long stage shows "0%" and then jumps to "100%" once
 it finishes, which reads as a hang and repeatedly did during this project's runs.
+Detecting that case from inside the process does not work either -- Colab runs
+`!python ...` under a pseudo-terminal, so isatty() is True while the frontend
+still swallows the frames. So the default is newline-terminated, flushed lines
+everywhere; SIREN_PROGRESS=bar opts back into tqdm for a local terminal.
 
-Detecting that case from inside the process turned out not to work. Colab runs
-`!python ...` under a pseudo-terminal, so isatty() is True even though the
-frontend still swallows the intermediate frames -- a first attempt keyed on
-isatty() picked the bar and changed nothing.
-
-So the default is now newline-terminated, flushed lines everywhere, which is
-readable in every environment and cannot silently regress. Set SIREN_PROGRESS=bar
-for a tqdm bar in a local terminal. Lines are throttled by both count and time,
-so a 464-batch pooling stage reports about twenty times rather than 464.
+Lines alone are not enough when a single item is slow. The shuffled-label
+control fits one layer roughly every 15 seconds, and progress can only be
+emitted between items, so the stage announced itself and then said nothing for a
+quarter minute -- long enough to look stuck again. A daemon heartbeat therefore
+reports elapsed time whenever no line has appeared for a while, and `note` lets
+a caller state the expected duration up front.
 """
 
 import os
 import sys
+import threading
 import time
 from typing import Iterable, Optional, TextIO
 
 
-def _fmt(seconds: float) -> str:
+def fmt_duration(seconds: float) -> str:
     seconds = int(max(0, seconds))
     if seconds < 60:
         return f"{seconds}s"
@@ -32,50 +34,84 @@ def _fmt(seconds: float) -> str:
 
 
 class _LineProgress:
-    """Newline-per-update progress for pipes. Emits at most `max_lines` updates."""
+    """Newline-per-update progress, with a heartbeat for slow items."""
 
     def __init__(self, total: Optional[int], desc: str, unit: str,
-                 max_lines: int = 20, min_interval: float = 10.0,
-                 stream: Optional[TextIO] = None):
+                 max_lines: int = 20, heartbeat: float = 20.0,
+                 note: str = "", stream: Optional[TextIO] = None):
         self.total = total
         self.desc = desc
         self.unit = unit
         self.stream = stream or sys.stdout
-        self.min_interval = min_interval
+        self.heartbeat = heartbeat
         self.step = max(1, -(-total // max_lines)) if total else 50
         self.start = time.time()
-        self.last = 0.0
+        self.last = self.start
         self.n = 0
-        print(f"{desc}: 开始，共 {total if total else '?'} {unit}", flush=True,
-              file=self.stream)
+        self._first = True
+        self._lock = threading.Lock()
+        self._done = threading.Event()
 
-    def update(self, final: bool = False) -> None:
-        self.n += 0 if final else 1
-        now = time.time()
-        due = (self.n % self.step == 0) or (now - self.last >= self.min_interval)
-        if not (final or due):
-            return
-        self.last = now
-        elapsed = now - self.start
-        if self.total:
-            pct = 100.0 * self.n / self.total
+        head = f"{desc}: 开始，共 {total if total else '?'} {unit}"
+        self._emit(head + (f"（{note}）" if note else ""))
+
+        self._beat = threading.Thread(target=self._heartbeat_loop, daemon=True)
+        self._beat.start()
+
+    def _emit(self, line: str) -> None:
+        print(line, flush=True, file=self.stream)
+        self.last = time.time()
+
+    def _heartbeat_loop(self) -> None:
+        # Wakes twice per heartbeat window so a quiet stretch is reported near
+        # the moment it becomes worth reporting, not a full window later.
+        while not self._done.wait(self.heartbeat / 2.0):
+            with self._lock:
+                if time.time() - self.last >= self.heartbeat:
+                    done = f"{self.n}/{self.total}" if self.total else str(self.n)
+                    self._emit(f"{self.desc}: 运行中… 已完成 {done}，"
+                               f"已用 {fmt_duration(time.time() - self.start)}")
+
+    def update(self) -> None:
+        with self._lock:
+            self.n += 1
+            due = self._first or self.n % self.step == 0
+            self._first = False
+            if not due:
+                return
+            self._emit(self._line())
+
+    def _line(self, final: bool = False) -> str:
+        elapsed = time.time() - self.start
+        if not self.total:
+            return f"{self.desc}: {self.n} {self.unit}  已用 {fmt_duration(elapsed)}"
+        pct = 100.0 * self.n / self.total
+        if final:
+            tail = "完成"
+        else:
             rate = self.n / elapsed if elapsed > 0 else 0.0
             eta = (self.total - self.n) / rate if rate > 0 else 0.0
-            tail = "完成" if final else f"剩余约 {_fmt(eta)}"
-            print(f"{self.desc}: {self.n}/{self.total} ({pct:.0f}%)  "
-                  f"已用 {_fmt(elapsed)}  {tail}", flush=True, file=self.stream)
-        else:
-            print(f"{self.desc}: {self.n} {self.unit}  已用 {_fmt(elapsed)}",
-                  flush=True, file=self.stream)
+            tail = f"剩余约 {fmt_duration(eta)}"
+        return (f"{self.desc}: {self.n}/{self.total} ({pct:.0f}%)  "
+                f"已用 {fmt_duration(elapsed)}  {tail}")
+
+    def close(self) -> None:
+        self._done.set()
+        with self._lock:
+            self._emit(self._line(final=True))
 
 
 def track(iterable: Iterable, desc: str, total: Optional[int] = None,
-          unit: str = "it", stream: Optional[TextIO] = None) -> Iterable:
+          unit: str = "it", note: str = "",
+          stream: Optional[TextIO] = None) -> Iterable:
     """
     Wrap an iterable with progress that is visible in every environment.
 
     One flushed line per update by default -- Colab, pipes, log files and plain
-    terminals all render those. SIREN_PROGRESS=bar opts into a tqdm bar locally.
+    terminals all render those -- plus a heartbeat so a stage whose individual
+    items take tens of seconds still reports that it is alive. `note` is printed
+    with the opening line; use it to state an expected duration when one is
+    known. SIREN_PROGRESS=bar opts into a tqdm bar locally.
     """
     if total is None:
         try:
@@ -92,10 +128,12 @@ def track(iterable: Iterable, desc: str, total: Optional[int] = None,
             pass
 
     def _gen():
-        bar = _LineProgress(total, desc, unit, stream=out)
-        for item in iterable:
-            yield item
-            bar.update()
-        bar.update(final=True)
+        bar = _LineProgress(total, desc, unit, note=note, stream=out)
+        try:
+            for item in iterable:
+                yield item
+                bar.update()
+        finally:
+            bar.close()
 
     return _gen()
