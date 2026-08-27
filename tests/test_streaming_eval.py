@@ -156,3 +156,46 @@ def test_heartbeat_reports_liveness_when_items_are_slow():
     beats = [l for l in lines if "运行中…" in l]
     assert beats, "长时间无输出时必须报活"
     assert any("已用" in b for b in beats)
+
+
+def test_last_token_pooling_indexes_by_mask_not_by_position():
+    """
+    The tokenizer pads on the right, so hidden_state[:, -1] is a pad token for
+    every sequence shorter than the batch maximum. Indexing by position instead
+    of by the attention mask silently pools padding -- no error, just wrong
+    vectors -- so this pins the mask lookup.
+    """
+    import torch
+    from siren.extractor import InternalStateExtractor
+
+    ex = object.__new__(InternalStateExtractor)          # skip __init__/model load
+    ex.device = "cpu"
+    ex.captured_states = {}
+
+    B, T, D = 3, 5, 4
+    # Distinct value per position so the wrong pick is unmistakable.
+    hidden = torch.arange(B * T * D, dtype=torch.float32).reshape(B, T, D)
+    mask = torch.tensor([[1, 1, 1, 0, 0],       # real length 3 -> index 2
+                         [1, 1, 0, 0, 0],       # real length 2 -> index 1
+                         [1, 1, 1, 1, 1]])      # real length 5 -> index 4
+
+    def fake_forward(**kw):
+        ex.captured_states = {1: hidden}
+        return None
+    ex.model = fake_forward
+
+    out = ex.extract_sequence_pooled(torch.zeros(B, T, dtype=torch.long),
+                                     mask, pooling="last")[1]
+    expected = torch.stack([hidden[0, 2], hidden[1, 1], hidden[2, 4]])
+    assert torch.allclose(out, expected), f"取到了错误位置:\n{out}\n应为\n{expected}"
+
+    # Mean pooling must ignore the padded tail too, and differ from last-token.
+    mean = ex.extract_sequence_pooled(torch.zeros(B, T, dtype=torch.long),
+                                      mask, pooling="mean")[1]
+    assert torch.allclose(mean[1], hidden[1, :2].mean(dim=0))
+    assert not torch.allclose(mean, out)
+
+    import pytest
+    with pytest.raises(ValueError, match="pooling"):
+        ex.extract_sequence_pooled(torch.zeros(B, T, dtype=torch.long), mask,
+                                   pooling="cls")

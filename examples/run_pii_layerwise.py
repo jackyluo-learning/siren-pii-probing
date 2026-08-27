@@ -77,13 +77,18 @@ def run_task(task: PIITask, model_name: str, eta: float = 0.8,
              mlp_hidden_dim: int = 256, epochs: int = 20,
              probe_train_cap: int = 4000,
              control_train_cap: int = 1500,
-             device: str = "cpu", max_length: int = 128) -> Dict:
+             device: str = "cpu", max_length: int = 128,
+             pooling: str = "mean") -> Dict:
     """Paper pipeline on one PII task; returns per-layer and aggregated results."""
     tokenizer, _, extractor, num_layers = load_model_and_extractor(model_name, device)
-    print(f"\n抽取 mean-pooled 表征（{num_layers} 层）...", flush=True)
-    tr = pool_texts(tokenizer, extractor, task.train_texts, num_layers, max_length)
-    va = pool_texts(tokenizer, extractor, task.val_texts, num_layers, max_length)
-    te = pool_texts(tokenizer, extractor, task.test_texts, num_layers, max_length)
+    how = "mean-pooled（全部词元取平均）" if pooling == "mean" else "last-token（取末位真实词元）"
+    print(f"\n抽取 {how} 表征（{num_layers} 层）...", flush=True)
+    tr = pool_texts(tokenizer, extractor, task.train_texts, num_layers, max_length,
+                   pooling=pooling)
+    va = pool_texts(tokenizer, extractor, task.val_texts, num_layers, max_length,
+                   pooling=pooling)
+    te = pool_texts(tokenizer, extractor, task.test_texts, num_layers, max_length,
+                   pooling=pooling)
     extractor.remove_hooks()
 
     layers = list(range(1, num_layers + 1))
@@ -258,6 +263,8 @@ def main():
                     help="presence-merged: 每个干净语料取多少条负样本")
     ap.add_argument("--holdout-source", default=None,
                     help="presence-merged: 把该语料完全排除出训练，测试集负样本全取自它")
+    ap.add_argument("--pooling", choices=["mean", "last"], default="mean",
+                    help="句表征的池化方式：mean = 论文的全词元平均；last = 末位真实词元")
     ap.add_argument("--control-cap", type=int, default=1500,
                     help="打乱标签对照探针的子采样上限（其成本随样本数约 n^2.7 增长）")
     ap.add_argument("--val-source", default=None,
@@ -299,6 +306,9 @@ def main():
         title = f"PII multiclass: {task.n_classes} categories"
         tag = f"{args.out_prefix}_multiclass_{task.n_classes}way"
 
+    if args.pooling != "mean":
+        title += f"  [{args.pooling}-token pooling]"
+        tag += f"_{args.pooling}"
     print(f"\n数据划分: train {len(task.train_texts)} / val {len(task.val_texts)} "
           f"/ test {len(task.test_texts)} | 类别数 {task.n_classes}")
     print(f"示例: {task.train_texts[0][:110]!r} -> {task.class_names[task.y_train[0]]}")
@@ -311,8 +321,9 @@ def main():
 
     res = run_task(task, args.model, epochs=args.epochs, device=device,
                    max_length=args.max_length, probe_train_cap=args.probe_cap,
-                   control_train_cap=args.control_cap)
+                   control_train_cap=args.control_cap, pooling=args.pooling)
 
+    res["pooling"] = args.pooling
     res["lexical_baseline"] = lex
     res["task_meta"] = {k: v for k, v in task.meta.items()}
     best = max(res["test_f1"].values())

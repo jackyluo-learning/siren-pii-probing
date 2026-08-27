@@ -130,18 +130,24 @@ class InternalStateExtractor:
     def extract_sequence_pooled(
         self,
         input_ids: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None
+        attention_mask: Optional[torch.Tensor] = None,
+        pooling: str = "mean"
     ) -> Dict[int, torch.Tensor]:
         """
-        Extract mean-pooled internal states over full sequence for input_ids.
-        
+        Extract pooled internal states over the full sequence for input_ids.
+
         Args:
             input_ids: Tensor of shape (B, T)
             attention_mask: Tensor of shape (B, T)
-            
+            pooling: "mean" averages every real token (paper Eq. 2); "last" takes
+                the final real token, the position a causal model has actually
+                read the whole sequence at.
+
         Returns:
             Dict mapping layer_idx (1..L) to pooled tensor of shape (B, D)
         """
+        if pooling not in ("mean", "last"):
+            raise ValueError(f"pooling 只能是 'mean' 或 'last'，收到 {pooling!r}")
         input_ids = input_ids.to(self.device)
         if attention_mask is not None:
             attention_mask = attention_mask.to(self.device)
@@ -159,18 +165,33 @@ class InternalStateExtractor:
         # Forward pass through base LLM (frozen)
         _ = self.model(input_ids=input_ids, attention_mask=attention_mask)
 
+        # The tokenizer pads on the right, so the final column is a pad token for
+        # every sequence shorter than the batch maximum. Last-token pooling must
+        # therefore index by the mask -- taking [:, -1] would read padding for
+        # most of a batch and silently produce near-identical vectors.
+        last_idx = None
+        if pooling == "last":
+            if attention_mask is not None:
+                last_idx = torch.clamp(attention_mask.cpu().sum(dim=1) - 1, min=0).long()
+            else:
+                last_idx = torch.full((input_ids.shape[0],),
+                                      input_ids.shape[1] - 1, dtype=torch.long)
+
         pooled_results = {}
         for layer_idx, hidden_state in self.captured_states.items():
             # hidden_state: (B, T, D)
-            if attention_mask is not None:
+            if pooling == "last":
+                gather = last_idx.view(-1, 1, 1).expand(-1, 1, hidden_state.shape[-1])
+                pooled = hidden_state.gather(1, gather).squeeze(1)  # (B, D)
+            elif attention_mask is not None:
                 mask_expanded = attention_mask.cpu().unsqueeze(-1).float()  # (B, T, 1)
                 sum_hidden = torch.sum(hidden_state * mask_expanded, dim=1)  # (B, D)
                 lengths = torch.clamp(mask_expanded.sum(dim=1), min=1.0)
-                mean_pooled = sum_hidden / lengths
+                pooled = sum_hidden / lengths
             else:
-                mean_pooled = torch.mean(hidden_state, dim=1)  # (B, D)
-                
-            pooled_results[layer_idx] = mean_pooled
+                pooled = torch.mean(hidden_state, dim=1)  # (B, D)
+
+            pooled_results[layer_idx] = pooled
 
         return pooled_results
 

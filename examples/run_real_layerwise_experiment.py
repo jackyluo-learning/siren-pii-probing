@@ -65,10 +65,15 @@ def load_model_and_extractor(
 def pool_texts(
     tokenizer, extractor, texts: Sequence[str], num_layers: int,
     max_length: int = 128, batch_size: int = 16, show_progress: bool = True,
+    pooling: str = "mean",
 ) -> Dict[int, np.ndarray]:
     """
-    Mean-pool residual-stream activations for each text (paper Eq. 2), in batches
-    with a progress bar. Order is preserved so features stay aligned with labels.
+    Pool residual-stream activations for each text, in batches with progress.
+    Order is preserved so features stay aligned with labels.
+
+    `pooling="mean"` is the paper's Eq. 2. `pooling="last"` takes the final real
+    token instead, which is the position a causal model has read the whole
+    sequence at, and is the other standard choice for sentence representations.
     """
 
     per_layer: Dict[int, List[np.ndarray]] = {l: [] for l in range(1, num_layers + 1)}
@@ -78,7 +83,8 @@ def pool_texts(
         batch = texts[start:start + batch_size]
         enc = tokenizer(batch, return_tensors="pt", padding=True,
                         truncation=True, max_length=max_length)
-        pooled = extractor.extract_sequence_pooled(enc["input_ids"], enc["attention_mask"])
+        pooled = extractor.extract_sequence_pooled(
+            enc["input_ids"], enc["attention_mask"], pooling=pooling)
         for l in range(1, num_layers + 1):
             arr = pooled[l].cpu().numpy()  # (B, D)
             per_layer[l].extend(arr[i] for i in range(arr.shape[0]))
