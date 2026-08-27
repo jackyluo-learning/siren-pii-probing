@@ -38,6 +38,7 @@ Run `parity_report` before trusting any result from this path.
 
 import json
 import os
+import shutil
 import tempfile
 from typing import Dict, List, Optional, Sequence
 
@@ -151,7 +152,9 @@ def suggest_chunk_size(num_layers: int, max_len: int, hidden: int, mode: str,
     total = (torch.cuda.get_device_properties(0).total_memory
              if torch.cuda.is_available() else 8 << 30)
     outside = total * (1.0 - gpu_mem_util)
-    n = max(1, int(outside * 0.15 // max(per_text, 1)))
+    # 0.15 was still fragmenting: the pad+stack buffer is a second copy of
+    # the same size, so a chunk costs about twice what this arithmetic says.
+    n = max(1, int(outside * 0.08 // max(per_text, 1)))
     print(f"  hook 缓存约 {per_text/2**20:.1f} MB/条；vLLM 预留之外约 "
           f"{outside/2**30:.1f} GiB → 起始块大小 {n}（OOM 会自动减半重试）", flush=True)
     return n
@@ -185,6 +188,14 @@ def build_hook_llm(model: str, num_layers: int, pooling: str = "mean",
     # Show the memory arithmetic before the engine spends minutes proving it
     # wrong. On a 14.56 GiB T4 with Qwen3-4B this is where it becomes visible
     # that all_tokens capture over 36 layers has almost nothing left to live in.
+    # Each chunk allocates a transient pad+stack buffer of roughly
+    # chunk x layers x seq_len x hidden before the copy to CPU, then frees it.
+    # Repeating that beside vLLM's fixed pool fragments the free space until even
+    # a 2 MiB request fails -- which is how the run died at 40%, not from any one
+    # allocation being too large. Expandable segments is the allocator mode meant
+    # for exactly this pattern; it is inherited by the engine subprocess.
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
     total = torch.cuda.get_device_properties(0).total_memory / 2 ** 30
     reserved = total * gpu_memory_utilization
     print(f"  显存账目: 总 {total:.1f} GiB → vLLM 预留 {reserved:.1f} GiB"
@@ -210,6 +221,7 @@ def build_hook_llm(model: str, num_layers: int, pooling: str = "mean",
         enable_hook=True,
         tensor_parallel_size=1,
     )
+    llm._siren_hook_dir = hook_dir     # pool_layers 需要它来删除每块的产物
     return llm, mode
 
 
@@ -285,6 +297,14 @@ def pool_layers(llm, texts: Sequence[str], num_layers: int, mode: str,
         if missing:
             raise RuntimeError(f"这些层没有被捕获：{sorted(missing)[:8]}…"
                                "（配置里的 layers 与模型层数不一致？）")
+        # Artifacts are written per run_id and never cleaned up by the plugin,
+        # while hook_dir defaults to /dev/shm -- RAM. In all_tokens mode a chunk
+        # is over a gigabyte, so leaving them behind fills memory as surely as any
+        # GPU leak. Delete each one as soon as it has been read.
+        run_id = getattr(llm, "_last_run_id", None)
+        hook_dir = getattr(llm, "_siren_hook_dir", None)
+        if run_id and hook_dir:
+            shutil.rmtree(os.path.join(hook_dir, run_id), ignore_errors=True)
         llm.llm_engine.reset_prefix_cache()
 
     # Not track(): the chunk size changes underfoot when a chunk is retried, so a
