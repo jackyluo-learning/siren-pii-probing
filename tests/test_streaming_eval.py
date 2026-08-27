@@ -199,3 +199,60 @@ def test_last_token_pooling_indexes_by_mask_not_by_position():
     with pytest.raises(ValueError, match="pooling"):
         ex.extract_sequence_pooled(torch.zeros(B, T, dtype=torch.long), mask,
                                    pooling="cls")
+
+
+def _fake_qwen_block():
+    """A block with Qwen/Llama's child names, enough to resolve hook targets."""
+    import torch.nn as nn
+
+    blk = nn.Module()
+    blk.self_attn = nn.Linear(4, 4)
+    blk.mlp = nn.Linear(4, 4)
+    blk.input_layernorm = nn.LayerNorm(4)
+    blk.post_attention_layernorm = nn.LayerNorm(4)
+    return blk
+
+
+def test_extraction_point_selects_the_intended_submodule():
+    """
+    Each tap point is resolved by a candidate name list, because families disagree
+    on naming. Picking the wrong submodule produces plausible-looking activations
+    with no error at all, so the mapping is pinned here.
+    """
+    import pytest
+    import torch.nn as nn
+    from siren.extractor import InternalStateExtractor
+
+    blk = _fake_qwen_block()
+    ex = object.__new__(InternalStateExtractor)
+    ex.hooks = []
+    ex.captured_states = {}
+    ex.target_layers = [(1, blk)]
+
+    for point, expected in (("residual", blk),
+                            ("ffn", blk.mlp),
+                            ("post_ln", blk.post_attention_layernorm)):
+        ex.extraction_point = point
+        ex._register_hooks()
+        # A forward hook registers on the module it targets.
+        hooked = {id(m) for m in (blk, blk.mlp, blk.post_attention_layernorm,
+                                  blk.self_attn)
+                  if m._forward_hooks}
+        assert hooked == {id(expected)}, f"{point} 挂到了错误的子模块"
+        ex.remove_hooks()
+
+    # A block missing the target must fail loudly, naming what it does have.
+    bare = nn.Module()
+    bare.attention = nn.Linear(4, 4)
+    ex2 = object.__new__(InternalStateExtractor)
+    ex2.hooks = []
+    ex2.captured_states = {}
+    ex2.target_layers = [(1, bare)]
+    ex2.extraction_point = "post_ln"
+    with pytest.raises(ValueError, match="post_ln"):
+        ex2._register_hooks()
+
+    with pytest.raises(ValueError, match="extraction_point"):
+        InternalStateExtractor.__init__(
+            object.__new__(InternalStateExtractor), model=nn.Module(),
+            extraction_point="attention_out")

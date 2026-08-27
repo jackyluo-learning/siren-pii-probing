@@ -44,6 +44,7 @@ from siren.probe import PAPER_C_GRID
 def load_model_and_extractor(
     model_name: str,
     device: str = "cuda" if torch.cuda.is_available() else "cpu",
+    extraction_point: str = "residual",
 ):
     """Load a frozen backbone once and attach the layer-wise state extractor."""
     print(f"Loading '{model_name}' on {device} ...")
@@ -56,7 +57,8 @@ def load_model_and_extractor(
         device_map="auto" if device == "cuda" else None,
         trust_remote_code=True,
     )
-    extractor = InternalStateExtractor(model=model, device=device)
+    extractor = InternalStateExtractor(model=model, device=device,
+                                       extraction_point=extraction_point)
     num_layers = len(extractor.target_layers)
     print(f"Detected {num_layers} transformer layers.")
     return tokenizer, model, extractor, num_layers

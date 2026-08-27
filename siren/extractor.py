@@ -19,16 +19,32 @@ class InternalStateExtractor:
         self,
         model: nn.Module,
         target_layer_names: Optional[List[str]] = None,
-        extraction_point: str = "residual",  # "residual" or "ffn"
+        extraction_point: str = "residual",  # "residual" | "ffn" | "post_ln"
         device: Optional[str] = None
     ):
         """
         Args:
             model: PyTorch LLM model (e.g. AutoModelForCausalLM).
             target_layer_names: Explicit list of layer submodule names. If None, auto-detects transformer layers.
-            extraction_point: Component to hook into ("residual" or "ffn").
+            extraction_point: Where inside each block to tap.
+                "residual" - the block's own output, i.e. the residual stream with
+                    both sublayers' contributions already added. This is what
+                    HuggingFace's output_hidden_states returns, and the default.
+                "ffn" - the MLP's output, before its residual add: this layer's
+                    increment rather than the running total.
+                "post_ln" - the normalisation that feeds the MLP, so what the MLP
+                    actually sees. Despite the usual name post_attention_layernorm
+                    these architectures are pre-norm: the module sits BEFORE the
+                    MLP and after the attention sublayer's residual add. Its output
+                    is rescaled per position, which flattens the attention sink --
+                    measured on Qwen2.5-0.5B layer 12, the first token's norm goes
+                    from 97.9x the median to 1.1x. That removes the sink's grip on
+                    mean pooling, at the cost of discarding magnitude information.
             device: Computing device ('cpu', 'cuda', 'mps').
         """
+        valid = ("residual", "ffn", "post_ln")
+        if extraction_point not in valid:
+            raise ValueError(f"extraction_point 只能是 {valid}，收到 {extraction_point!r}")
         self.model = model
         self.extraction_point = extraction_point
 
@@ -97,14 +113,26 @@ class InternalStateExtractor:
         self.remove_hooks()
         self.captured_states = {}
 
+        # Submodule names differ across families, so each tap point is looked up
+        # by a candidate list rather than assuming one architecture's naming.
+        CANDIDATES = {
+            "ffn": ["mlp", "ffn", "feed_forward"],
+            "post_ln": ["post_attention_layernorm", "ln_2", "ln_mlp",
+                        "post_attn_layernorm"],
+        }
         for layer_idx, module in self.target_layers:
             target_module = module
-            if self.extraction_point == "ffn":
-                # Attempt to find FFN module within transformer block
-                for ffn_attr in ["mlp", "ffn", "feed_forward"]:
-                    if hasattr(module, ffn_attr):
-                        target_module = getattr(module, ffn_attr)
+            names = CANDIDATES.get(self.extraction_point)
+            if names is not None:
+                for attr in names:
+                    if hasattr(module, attr):
+                        target_module = getattr(module, attr)
                         break
+                else:
+                    raise ValueError(
+                        f"extraction_point={self.extraction_point!r} 在该模型的 block 里"
+                        f"找不到对应子模块，试过 {names}；"
+                        f"该 block 实际有 {[n for n, _ in module.named_children()]}。")
 
             def get_hook(idx: int):
                 def hook(mod, input_args, output):
