@@ -130,10 +130,44 @@ def _layer_index(layer_name: str, meta_num: Optional[int]) -> int:
     return int(tail[-1]) + 1
 
 
+def suggest_chunk_size(num_layers: int, max_len: int, hidden: int, mode: str,
+                       fraction: float = 0.25) -> int:
+    """
+    Size the chunk from free GPU memory instead of a fixed guess.
+
+    The hook cache lives on the GPU until retrieval: in all_tokens mode it holds
+    chunk x layers x seq_len x hidden fp16 values on top of the weights and KV
+    cache vLLM has already reserved. A fixed chunk of 32 was calibrated for 128
+    tokens and then OOM'd at 512 -- it asked for 3.36 GiB with 1.96 GiB free --
+    because the cost scales with max_model_len, which the caller sets separately.
+    So compute it, and only spend `fraction` of what is free.
+    """
+    import torch
+    per_text = num_layers * hidden * 2
+    if mode == "all_tokens":
+        per_text *= max_len
+    free = torch.cuda.mem_get_info()[0] if torch.cuda.is_available() else 2 << 30
+    n = max(1, int(free * fraction // max(per_text, 1)))
+    print(f"  hook 缓存约 {per_text/2**20:.1f} MB/条，空闲显存 {free/2**30:.1f} GiB"
+          f" → 块大小取 {n}", flush=True)
+    return n
+
+
 def build_hook_llm(model: str, num_layers: int, pooling: str = "mean",
-                   max_model_len: int = 512, gpu_memory_utilization: float = 0.75,
+                   max_model_len: int = 128, gpu_memory_utilization: float = 0.62,
                    hook_dir: str = "/dev/shm/vllm_hook", cache_dir: str = "./cache/"):
-    """Construct a HookLLM configured to capture every layer."""
+    """
+    Construct a HookLLM configured to capture every layer.
+
+    max_model_len defaults to 128 to match the HuggingFace path's max_length. That
+    is a correctness requirement, not a memory one: truncating at different points
+    feeds the two paths different token sequences, so parity would fail even with
+    the extraction itself perfectly right.
+
+    gpu_memory_utilization is deliberately below vLLM's usual 0.9. Whatever vLLM
+    reserves is unavailable to the hook cache, which needs GPU room of its own --
+    on a 14.56 GiB T4, 0.75 left too little and the capture OOM'd.
+    """
     check_runtime()
     import torch
     from vllm_hook_plugins import HookLLM
@@ -160,7 +194,8 @@ def build_hook_llm(model: str, num_layers: int, pooling: str = "mean",
 
 
 def pool_layers(llm, texts: Sequence[str], num_layers: int, mode: str,
-                chunk_size: int = 32, show_progress: bool = True) -> Dict[int, np.ndarray]:
+                chunk_size: int = 0, show_progress: bool = True,
+                max_len: int = 128, hidden: int = 0) -> Dict[int, np.ndarray]:
     """
     Pool every layer for every text. Returns {layer: (N, hidden)}, order preserved.
 
@@ -170,6 +205,11 @@ def pool_layers(llm, texts: Sequence[str], num_layers: int, mode: str,
     of fp16 per text, so a whole split at once would be tens of gigabytes.
     """
     from vllm import SamplingParams
+
+    if chunk_size <= 0:
+        if not hidden:
+            hidden = int(llm.llm_engine.vllm_config.model_config.get_hidden_size())
+        chunk_size = suggest_chunk_size(num_layers, max_len, hidden, mode)
 
     texts = list(texts)
     per_layer: Dict[int, List[np.ndarray]] = {l: [] for l in range(1, num_layers + 1)}
@@ -223,13 +263,29 @@ def parity_report(model: str, texts: Sequence[str], num_layers: int,
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "examples"))
     from run_real_layerwise_experiment import load_model_and_extractor, pool_texts
 
-    tok, _, ex, hf_layers = load_model_and_extractor(model, device)
+    # The two engines cannot share the GPU: Qwen3-4B in fp16 is ~7.5 GiB, and the
+    # first version of this function left the HuggingFace copy resident, so vLLM
+    # started with 5.9 of 14.56 GiB free and refused to allocate. remove_hooks()
+    # detaches the hooks but frees nothing, so the model has to be dropped and the
+    # allocator's cache released before the second engine is built.
+    import gc
+    import torch
+
+    tok, hf_model, ex, hf_layers = load_model_and_extractor(model, device)
     hf = pool_texts(tok, ex, texts, hf_layers, max_length, pooling=pooling,
                     show_progress=False)
     ex.remove_hooks()
+    del ex, hf_model, tok
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        free = torch.cuda.mem_get_info()[0] / 2 ** 30
+        print(f"  已释放 HuggingFace 模型，空闲显存回到 {free:.1f} GiB", flush=True)
 
+    hook_kwargs.setdefault("max_model_len", max_length)   # 必须与 HF 的截断一致
     llm, mode = build_hook_llm(model, num_layers, pooling, **hook_kwargs)
-    vl = pool_layers(llm, texts, num_layers, mode, show_progress=False)
+    vl = pool_layers(llm, texts, num_layers, mode, show_progress=False,
+                     max_len=max_length)
 
     rows = []
     for l in sorted(set(hf) & set(vl)):

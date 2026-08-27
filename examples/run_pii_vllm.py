@@ -73,9 +73,12 @@ def main():
     ap.add_argument("--categories", default=None)
     ap.add_argument("--n-categories", type=int, default=6)
     ap.add_argument("--min-per-class", type=int, default=60)
-    ap.add_argument("--max-model-len", type=int, default=512)
-    ap.add_argument("--chunk-size", type=int, default=32)
-    ap.add_argument("--gpu-mem", type=float, default=0.75)
+    ap.add_argument("--max-model-len", type=int, default=128,
+                    help="必须与 HF 路径的 --max-length 一致，否则两边截断点不同")
+    ap.add_argument("--chunk-size", type=int, default=0,
+                    help="0 = 按空闲显存自动决定（hook 缓存驻留在 GPU 上）")
+    ap.add_argument("--gpu-mem", type=float, default=0.62,
+                    help="留低一些：vLLM 占掉的显存 hook 缓存就用不上了")
     ap.add_argument("--probe-cap", type=int, default=4000)
     ap.add_argument("--control-cap", type=int, default=1500)
     ap.add_argument("--epochs", type=int, default=20)
@@ -123,7 +126,8 @@ def main():
                                max_model_len=args.max_model_len,
                                gpu_memory_utilization=args.gpu_mem)
     t0 = time.time()
-    pool = lambda xs: pool_layers(llm, xs, num_layers, mode, args.chunk_size)
+    pool = lambda xs: pool_layers(llm, xs, num_layers, mode, args.chunk_size,
+                                  max_len=args.max_model_len)
     tr, va, te = pool(task.train_texts), pool(task.val_texts), pool(task.test_texts)
     extract_secs = time.time() - t0
     print(f"\n抽取用时 {extract_secs:.0f}s，共 "
