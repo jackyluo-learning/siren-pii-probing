@@ -155,6 +155,11 @@ def suggest_chunk_size(num_layers: int, max_len: int, hidden: int, mode: str,
     # 0.15 was still fragmenting: the pad+stack buffer is a second copy of
     # the same size, so a chunk costs about twice what this arithmetic says.
     n = max(1, int(outside * 0.08 // max(per_text, 1)))
+    # Cap it. The chunk exists to bound the hook cache, not to raise throughput --
+    # vLLM batches internally either way -- and an enormous chunk only means a
+    # retry after OOM throws away more work, and pushes the engine into scheduler
+    # edge cases that a modest one never reaches.
+    n = min(n, 256)
     print(f"  hook 缓存约 {per_text/2**20:.1f} MB/条；vLLM 预留之外约 "
           f"{outside/2**30:.1f} GiB → 起始块大小 {n}（OOM 会自动减半重试）", flush=True)
     return n
@@ -162,7 +167,8 @@ def suggest_chunk_size(num_layers: int, max_len: int, hidden: int, mode: str,
 
 def build_hook_llm(model: str, num_layers: int, pooling: str = "mean",
                    max_model_len: int = 128, gpu_memory_utilization: float = 0.62,
-                   hook_dir: str = "/dev/shm/vllm_hook", cache_dir: str = "./cache/"):
+                   hook_dir: str = "/dev/shm/vllm_hook", cache_dir: str = "./cache/",
+                   max_num_seqs: int = 32):
     """
     Construct a HookLLM configured to capture every layer.
 
@@ -220,6 +226,15 @@ def build_hook_llm(model: str, num_layers: int, pooling: str = "mean",
         enable_prefix_caching=False,   # prefix reuse would skip the prefill we need
         enable_hook=True,
         tensor_parallel_size=1,
+        # Bound concurrency explicitly. With last_token pooling a chunk costs
+        # almost nothing in hook memory, so the auto-sizer offered 3902 texts at
+        # once; the scheduler then ran 175 sequences concurrently and vLLM 0.11
+        # died in its sampled-token copy with "The size of tensor a (132) must
+        # match the size of tensor b (175)" -- 132 being max_model_len + 4, the
+        # short window this project uses to match the HuggingFace truncation.
+        # Concurrency buys nothing here anyway: every request is one prefill plus
+        # one token, and vLLM batches internally regardless of chunk size.
+        max_num_seqs=max_num_seqs,
     )
     llm._siren_hook_dir = hook_dir     # pool_layers 需要它来删除每块的产物
     return llm, mode
