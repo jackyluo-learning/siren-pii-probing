@@ -46,6 +46,47 @@ import numpy as np
 from .progress import track
 
 
+def check_runtime() -> None:
+    """
+    Fail with one actionable line instead of a forty-line import traceback.
+
+    Measured on Colab (Python 3.13, Tesla T4, a CUDA-12 package ecosystem):
+    installing vLLM-Hook's requirement.txt resolves `vllm>=0.5,<=0.21` to 0.21.0,
+    which pins torch==2.11.0 -- a CUDA 13 build -- and `import vllm._C` then dies
+    on a missing libcudart.so.13. The failure surfaces deep inside vLLM's
+    platform detection, where nothing points at the version pin that caused it.
+    """
+    try:
+        import vllm  # noqa: F401
+    except ImportError as exc:
+        msg = str(exc)
+        if "libcudart" in msg:
+            want = msg.split("libcudart.so.")[-1].split(":")[0]
+            raise RuntimeError(
+                f"vLLM 装的是 CUDA {want} 构建，但运行时没有对应的 CUDA runtime。\n"
+                f"  原始错误: {msg}\n"
+                f"  路 A（不动 torch）: pip install nvidia-cuda-runtime-cu{want}\n"
+                f"  路 B（换 cu12 版本，需重启运行时）: pip install 'vllm==0.11.0'\n"
+                f"  注意 vLLM-Hook 的 requirement.txt 会解析到 vllm 0.21.0，"
+                f"它钉死 torch==2.11.0（cu13）——不要用它装 vllm。") from exc
+        raise RuntimeError(f"导入 vllm 失败：{msg}") from exc
+
+    try:
+        from vllm_hook_plugins import HookLLM  # noqa: F401
+    except ImportError as exc:
+        raise RuntimeError(
+            f"导入 vllm_hook_plugins 失败：{exc}\n"
+            "  先跑: pip install -e /content/vLLM-Hook/vllm_hook_plugins") from exc
+
+    import torch
+    if not torch.cuda.is_available():
+        raise RuntimeError("没有可用 GPU，vLLM 无法运行。")
+    cc = torch.cuda.get_device_capability(0)
+    if cc[0] < 8:
+        print(f"⚠️ GPU 算力 {cc[0]}.{cc[1]}（如 T4 = 7.5）：不支持 bfloat16，"
+              "也没有 FlashAttention，vLLM 会回退到较慢的实现。本项目固定用 float16，可以跑。")
+
+
 def _write_model_config(model: str, num_layers: int, mode: str, out_dir: str) -> str:
     """vLLM-Hook reads which layers to capture from a per-model JSON file."""
     os.makedirs(out_dir, exist_ok=True)
@@ -77,6 +118,7 @@ def build_hook_llm(model: str, num_layers: int, pooling: str = "mean",
                    max_model_len: int = 512, gpu_memory_utilization: float = 0.75,
                    hook_dir: str = "/dev/shm/vllm_hook", cache_dir: str = "./cache/"):
     """Construct a HookLLM configured to capture every layer."""
+    check_runtime()
     import torch
     from vllm_hook_plugins import HookLLM
 
