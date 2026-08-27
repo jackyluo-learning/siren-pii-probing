@@ -98,8 +98,24 @@ def main():
         t = build_pii_presence_merged_task(cap=800, per_source=200,
                                            holdout_source=args.holdout_source,
                                            verbose=False)
-        texts = list(t.train_texts[:args.parity_n])
-        print(f"\n用 {len(texts)} 条真实任务文本，两条路径各抽一次并对比 ...\n")
+        # Deliberately include texts that fill the window exactly. The first
+        # version sampled the head of the split, none of its 16 texts reached the
+        # cap, and it passed while the real runs died on
+        # "Total number of tokens: 129 > max_model_len: 128". A gate that cannot
+        # see the boundary is not gating the boundary.
+        from transformers import AutoTokenizer
+        tk = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
+        lens = [len(x) for x in tk(list(t.train_texts))["input_ids"]]
+        order = sorted(range(len(lens)), key=lambda i: -lens[i])
+        n_long = max(2, args.parity_n // 4)
+        picked = order[:n_long] + [i for i in range(len(lens)) if i not in order[:n_long]]
+        texts = [t.train_texts[i] for i in picked[:args.parity_n]]
+        at_cap = sum(1 for i in picked[:args.parity_n]
+                     if lens[i] >= args.max_model_len)
+        print(f"\n用 {len(texts)} 条真实任务文本（其中 {at_cap} 条达到或超过 "
+              f"{args.max_model_len} 词元的截断上限），两条路径各抽一次并对比 ...\n")
+        if at_cap == 0:
+            print("⚠️ 没有样本触及截断上限，这一轮检验覆盖不到边界情况。\n")
         rep = parity_report(args.model, texts, num_layers, pooling=args.pooling,
                             max_model_len=args.max_model_len,
                             gpu_memory_utilization=args.gpu_mem)

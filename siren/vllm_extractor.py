@@ -163,10 +163,16 @@ def build_hook_llm(model: str, num_layers: int, pooling: str = "mean",
     """
     Construct a HookLLM configured to capture every layer.
 
-    max_model_len defaults to 128 to match the HuggingFace path's max_length. That
-    is a correctness requirement, not a memory one: truncating at different points
-    feeds the two paths different token sequences, so parity would fail even with
-    the extraction itself perfectly right.
+    max_model_len is the PROMPT truncation length, matching the HuggingFace path's
+    max_length. That is a correctness requirement, not a memory one: truncating at
+    different points feeds the two paths different token sequences, so parity
+    would fail even with the extraction itself perfectly right.
+
+    vLLM is given a slightly larger window, because its limit covers prompt plus
+    generated tokens. Passing the two as equal asserted "Sampled token IDs exceed
+    the max model length. Total number of tokens: 129 > max_model_len: 128" on the
+    first text that filled the window exactly -- 9 of 6000 did. Parity had missed
+    it because none of its 16 texts reached the cap.
 
     gpu_memory_utilization is deliberately below vLLM's usual 0.9. Whatever vLLM
     reserves is unavailable to the hook cache, which needs GPU room of its own --
@@ -195,7 +201,9 @@ def build_hook_llm(model: str, num_layers: int, pooling: str = "mean",
         download_dir=cache_dir,
         hook_dir=hook_dir,
         gpu_memory_utilization=gpu_memory_utilization,
-        max_model_len=max_model_len,
+        # +4 covers the single sampled token with slack; prompts are still cut
+        # at max_model_len, so what the probes see is unchanged.
+        max_model_len=max_model_len + 4,
         trust_remote_code=True,
         dtype=torch.float16,
         enable_prefix_caching=False,   # prefix reuse would skip the prefill we need
