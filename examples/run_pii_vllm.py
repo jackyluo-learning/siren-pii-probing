@@ -117,7 +117,7 @@ def main():
         if at_cap == 0:
             print("⚠️ 没有样本触及截断上限，这一轮检验覆盖不到边界情况。\n")
         rep = parity_report(args.model, texts, num_layers, pooling=args.pooling,
-                            max_model_len=args.max_model_len,
+                            max_length=args.max_model_len,
                             gpu_memory_utilization=args.gpu_mem)
         print(f"{'层':>4} {'余弦相似度':>12} {'相对差':>12}")
         for r in rep["rows"]:

@@ -328,6 +328,17 @@ def parity_report(model: str, texts: Sequence[str], num_layers: int,
     is masked -- all of which change the numbers without raising anything. Run it
     before reading any score produced through the vLLM path.
     """
+    # One length governs both sides. Letting the caller also pass max_model_len
+    # through hook_kwargs made them silently divergent: the runner set it while
+    # max_length kept its own default, so any value other than 128 would have
+    # truncated the two paths differently and reported a mismatch that was the
+    # harness's fault, not the extraction's -- the worst possible false alarm from
+    # a gate whose whole job is to catch exactly that.
+    if "max_model_len" in hook_kwargs:
+        raise TypeError("parity_report 只接受 max_length；max_model_len 由它推导，"
+                        "分开传会让两条路径的截断点不一致。")
+    hook_kwargs["max_model_len"] = max_length
+
     import sys
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "examples"))
     from run_real_layerwise_experiment import load_model_and_extractor, pool_texts
@@ -351,7 +362,6 @@ def parity_report(model: str, texts: Sequence[str], num_layers: int,
         free = torch.cuda.mem_get_info()[0] / 2 ** 30
         print(f"  已释放 HuggingFace 模型，空闲显存回到 {free:.1f} GiB", flush=True)
 
-    hook_kwargs.setdefault("max_model_len", max_length)   # 必须与 HF 的截断一致
     llm, mode = build_hook_llm(model, num_layers, pooling, **hook_kwargs)
     vl = pool_layers(llm, texts, num_layers, mode, show_progress=False,
                      max_len=max_length)
