@@ -46,7 +46,12 @@ def compare(key: str, path: str, zh: str, ref: dict, plot: bool) -> bool:
     # The floor is computed on raw text with no model involved, so matching
     # floors are direct evidence both paths were handed the same texts and the
     # same split. A mismatch invalidates the comparison before any layer is read.
-    same = abs(hf["lexical_baseline"] - vl["lexical_baseline"]) < 1e-6
+    #
+    # Compare at 4 decimals, not exactly: the reference values were recovered by
+    # parsing a "Macro-F1 = {:.4f}" printout, while the vLLM side reads a JSON
+    # holding the full float. A 1e-6 tolerance called two identical 0.7851s
+    # different and told the reader to distrust a comparison that was fine.
+    same = abs(round(hf["lexical_baseline"], 4) - round(vl["lexical_baseline"], 4)) < 1e-9
     print(f"  词袋地板线 HF {hf['lexical_baseline']:.4f}  |  vLLM {vl['lexical_baseline']:.4f}"
           + ("   ← 相同，两边拿到的是同一批文本" if same
              else "   ← 不同！数据划分对不上，下面的比较无意义"))
